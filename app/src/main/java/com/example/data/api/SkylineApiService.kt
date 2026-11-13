@@ -10,8 +10,12 @@ interface SkylineApiService {
 
     @POST("auth/login")
     suspend fun login(
-        @Body body: EncryptedPayloadRequest
+        @Body body: EncryptedPayloadRequest,
+        @Header("Authorization") authHeader: String = "Bearer null"
     ): Response<LoginResponse>
+
+    @GET("auth/autoLogin")
+    suspend fun autoLogin(): Response<LoginResponse>
 
     @GET("user")
     suspend fun getUser(
@@ -36,7 +40,7 @@ interface SkylineApiService {
     @POST("redeem")
     suspend fun redeem(
         @Header("Authorization") authHeader: String,
-        @Body body: RedeemRequest
+        @Body body: EncryptedPayloadRequest
     ): Response<GenericActionResponse>
 
     @POST("user/extend")

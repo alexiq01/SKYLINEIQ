@@ -9,7 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -18,10 +19,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,11 +34,17 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.data.repository.SkylineRepository
+import com.example.security.AppLockManager
+import com.example.security.AppLockScreen
 import com.example.security.AppSecurityEngine
 import com.example.ui.home.HomeScreen
 import com.example.ui.home.HomeViewModel
@@ -48,15 +58,32 @@ import com.example.worker.NotificationScheduler
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         AppSecurityEngine.initializeSilently(this)
+        AppLockManager.init(applicationContext)
+        if (savedInstanceState == null) {
+            AppLockManager.onAppLaunched(applicationContext)
+        }
+
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                AppLockManager.onAppReturnedToForeground(applicationContext)
+            }
+
+            override fun onStop(owner: LifecycleOwner) {
+                if (!isChangingConfigurations) {
+                    AppLockManager.onAppMovedToBackground()
+                }
+            }
+        })
+
         com.example.notifications.NotificationInboxManager.init(applicationContext)
         com.example.ui.theme.ThemeController.init(this)
         enableEdgeToEdge()
@@ -64,12 +91,13 @@ class MainActivity : ComponentActivity() {
         // Schedule periodic WorkManager task to monitor subscription expiration dates
         NotificationScheduler.schedulePeriodicSubscriptionCheck(applicationContext)
         NotificationScheduler.schedulePeriodicSupportNotification(applicationContext)
+        NotificationScheduler.checkCachedAndScheduleAlerts(applicationContext)
 
         setContent {
             MyApplicationTheme {
                 val currentDensity = LocalDensity.current
                 val fontScaleMultiplier = com.example.ui.theme.ThemeController.fontScaleMultiplier
-                
+
                 // Ensure full Arabic RTL support across all screens, and apply user's font scale
                 CompositionLocalProvider(
                     LocalLayoutDirection provides LayoutDirection.Rtl,
@@ -84,9 +112,12 @@ class MainActivity : ComponentActivity() {
                         UpdateManager.checkForUpdates(appContext)
                     }
 
+                    val lockState by AppLockManager.lockStateFlow.collectAsState()
                     NotificationPermissionHandler()
                     AppNavigation()
-                    InAppUpdateDialogHost()
+                    if (!lockState.isLocked) {
+                        InAppUpdateDialogHost()
+                    }
                 }
             }
         }
@@ -115,85 +146,110 @@ fun AppNavigation() {
     val context = LocalContext.current.applicationContext
     val navController = rememberNavController()
     val repository = remember { SkylineRepository(context) }
+    val lockState by AppLockManager.lockStateFlow.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
 
-    NavHost(
-        navController = navController,
-        startDestination = "splash",
-        modifier = Modifier.fillMaxSize(),
-        enterTransition = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> fullWidth },
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy)
-            ) + fadeIn(animationSpec = tween(320))
-        },
-        exitTransition = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> -fullWidth / 3 },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeOut(animationSpec = tween(220))
-        },
-        popEnterTransition = {
-            slideInHorizontally(
-                initialOffsetX = { fullWidth -> -fullWidth / 3 },
-                animationSpec = tween(300, easing = FastOutSlowInEasing)
-            ) + fadeIn(animationSpec = tween(220))
-        },
-        popExitTransition = {
-            slideOutHorizontally(
-                targetOffsetX = { fullWidth -> fullWidth },
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy)
-            ) + fadeOut(animationSpec = tween(300))
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavHost(
+            navController = navController,
+            startDestination = "splash",
+            modifier = Modifier.fillMaxSize(),
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> fullWidth },
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy)
+                ) + fadeIn(animationSpec = tween(320))
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> -fullWidth / 3 },
+                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                ) + fadeOut(animationSpec = tween(220))
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { fullWidth -> -fullWidth / 3 },
+                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                ) + fadeIn(animationSpec = tween(220))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { fullWidth -> fullWidth },
+                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy)
+                ) + fadeOut(animationSpec = tween(300))
+            }
+        ) {
+            composable("splash") {
+                SplashScreen(
+                    hasValidSession = repository.sessionManager.hasValidSession(),
+                    onNavigateNext = { dest ->
+                        navController.navigate(dest) {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable("login") {
+                val loginViewModel: LoginViewModel = viewModel(
+                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                            return LoginViewModel(repository) as T
+                        }
+                    }
+                )
+
+                LoginScreen(
+                    viewModel = loginViewModel,
+                    onLoginSuccess = {
+                        navController.navigate("home") {
+                            popUpTo("login") { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable("home") {
+                val homeViewModel: HomeViewModel = viewModel(
+                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                            return HomeViewModel(repository) as T
+                        }
+                    }
+                )
+
+                HomeScreen(
+                    viewModel = homeViewModel,
+                    onSessionExpired = {
+                        navController.navigate("login") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    },
+                    onLogout = {
+                        navController.navigate("login") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    }
+                )
+            }
         }
-    ) {
-        composable("splash") {
-            SplashScreen(
-                hasValidSession = repository.sessionManager.hasValidSession(),
-                onNavigateNext = { dest ->
-                    navController.navigate(dest) {
-                        popUpTo("splash") { inclusive = true }
-                    }
-                }
-            )
-        }
 
-        composable("login") {
-            val loginViewModel: LoginViewModel = viewModel(
-                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        return LoginViewModel(repository) as T
-                    }
-                }
-            )
-
-            LoginScreen(
-                viewModel = loginViewModel,
-                onLoginSuccess = {
-                    navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable("home") {
-            val homeViewModel: HomeViewModel = viewModel(
-                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        return HomeViewModel(repository) as T
-                    }
-                }
-            )
-
-            HomeScreen(
-                viewModel = homeViewModel,
-                onSessionExpired = {
-                    navController.navigate("login") {
-                        popUpTo("home") { inclusive = true }
-                    }
+        // Security Gate Overlay: covers subscriber data immediately on launch & background resume
+        AnimatedVisibility(
+            visible = lockState.isLocked && currentRoute == "home",
+            enter = EnterTransition.None,
+            exit = fadeOut(animationSpec = tween(220))
+        ) {
+            AppLockScreen(
+                onUnlocked = {
+                    AppLockManager.unlockApp(context)
                 },
-                onLogout = {
+                onResetAndLogout = {
+                    repository.logout()
+                    AppLockManager.resetLockOnLogout(context)
                     navController.navigate("login") {
                         popUpTo("home") { inclusive = true }
                     }

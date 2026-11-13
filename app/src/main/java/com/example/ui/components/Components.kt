@@ -647,15 +647,15 @@ fun IPhoneFloatingDock(
                         if (isDark) {
                             Brush.verticalGradient(
                                 listOf(
-                                    Color(0x3338BDF8),
-                                    Color(0x1A0284C7)
+                                    Color(0x3838BDF8),
+                                    Color(0x1E0284C7)
                                 )
                             )
                         } else {
                             Brush.verticalGradient(
                                 listOf(
-                                    Color(0x280284C7),
-                                    Color(0x1538BDF8)
+                                    Color(0x24007AFF),
+                                    Color(0x1232ADE6)
                                 )
                             )
                         }
@@ -667,7 +667,13 @@ fun IPhoneFloatingDock(
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(30.dp))
+                            .animateContentSize(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                            .clip(RoundedCornerShape(28.dp))
                             .background(activeBg)
                             .then(
                                 if (isSelected) {
@@ -675,11 +681,11 @@ fun IPhoneFloatingDock(
                                         width = 1.dp,
                                         brush = Brush.verticalGradient(
                                             listOf(
-                                                (if (isDark) SkylineCyan else SkylineBlue).copy(alpha = 0.5f),
+                                                (if (isDark) SkylineCyan else SkylineBlue).copy(alpha = 0.45f),
                                                 Color.Transparent
                                             )
                                         ),
-                                        shape = RoundedCornerShape(30.dp)
+                                        shape = RoundedCornerShape(28.dp)
                                     )
                                 } else Modifier
                             )
@@ -687,7 +693,7 @@ fun IPhoneFloatingDock(
                                 HapticFeedbackHelper.performClick(context, haptic)
                                 onTabSelected(index)
                             }
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                            .padding(horizontal = if (isSelected) 15.dp else 13.dp, vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -699,14 +705,13 @@ fun IPhoneFloatingDock(
                                     modifier = Modifier.size(22.dp)
                                 )
 
-                                // Notification Bubble Badge (like WhatsApp / Telegram in reference mockup)
                                 if (index == 2 && unreadNotificationsCount > 0) {
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
                                             .offset(x = 6.dp, y = (-4).dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF25D366))
+                                            .background(SkylineError)
                                             .padding(horizontal = 4.dp, vertical = 1.dp)
                                     ) {
                                         Text(
@@ -724,7 +729,7 @@ fun IPhoneFloatingDock(
                                 Text(
                                     text = title,
                                     fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    fontWeight = FontWeight.Bold,
                                     color = SkylineBlue
                                 )
                             }
@@ -754,22 +759,23 @@ fun IPhoneControlCenterGrid(
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "مركز التحكم السريع (Control Center)",
-                fontSize = 15.sp,
+                text = "الوصول السريع",
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
-                text = "Liquid Glass",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = SkylineCyan,
-                letterSpacing = 0.8.sp
+                text = "إدارة فورية",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = SkylineBlue
             )
         }
 
@@ -1203,25 +1209,25 @@ fun CardOnlineStatusIndicator(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isOnline) "متصل (Online)" else "غير متصل (Offline)",
+                        text = if (isOnline) "متصل بالخدمة" else "وضع عدم الاتصال",
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = contentColor
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     Text(
-                        text = if (isOnline) "• البيانات محدثة" else "• بيانات محفوظة محلياً",
+                        text = if (isOnline) "• محدث الآن" else "• بيانات محفوظة",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = contentColor.copy(alpha = 0.85f)
                     )
                 }
 
-                if (!isOnline && lastUpdatedFormatted.isNotBlank()) {
+                if (lastUpdatedFormatted.isNotBlank()) {
                     Text(
-                        text = "آخر تحديث متوفر: $lastUpdatedFormatted",
+                        text = "آخر تحديث: $lastUpdatedFormatted",
                         fontSize = 10.sp,
-                        color = contentColor.copy(alpha = 0.8f)
+                        color = contentColor.copy(alpha = 0.78f)
                     )
                 }
             }
@@ -1234,21 +1240,21 @@ fun CardOnlineStatusIndicator(
                     onRefresh()
                 },
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(40.dp)
                     .testTag("btn_refresh_card_status")
             ) {
                 if (isRefreshing) {
                     CircularProgressIndicator(
                         strokeWidth = 2.dp,
                         color = contentColor,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "تحديث البيانات الآن",
                         tint = contentColor,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -1279,15 +1285,25 @@ fun CircularDaysGauge(
     val labelFontSize = if (isCompact) 8.5.sp else 10.sp
     val percentFontSize = if (isCompact) 8.5.sp else 10.sp
 
+    val arcColors = when {
+        days <= 0 -> listOf(SkylineError, Color(0xFFFF6B6B), SkylineError)
+        days <= 3 -> listOf(Color(0xFFF59E0B), Color(0xFFFB923C), Color(0xFFF59E0B))
+        else -> listOf(SkylineBlue, SkylineCyan, SkylineSuccess, SkylineCyan, SkylineBlue)
+    }
+    val accentColor = when {
+        days <= 0 -> SkylineError
+        days <= 3 -> Color(0xFFF59E0B)
+        else -> SkylineSuccess
+    }
+
     Box(
         modifier = modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.size(size)) {
             val strokePx = strokeWidthDp.toPx()
-            val trackColor = if (isDark) Color(0x331E3A5F) else Color(0x33007AFF)
-            
-            // Track background with subtle glass opacity
+            val trackColor = if (isDark) Color(0x331E3A5F) else Color(0x28007AFF)
+
             drawArc(
                 color = trackColor,
                 startAngle = -90f,
@@ -1295,17 +1311,8 @@ fun CircularDaysGauge(
                 useCenter = false,
                 style = Stroke(width = strokePx, cap = StrokeCap.Round)
             )
-            // Liquid Neon Progress arc
             drawArc(
-                brush = Brush.sweepGradient(
-                    listOf(
-                        SkylineBlue,
-                        SkylineCyan,
-                        SkylineSuccess,
-                        SkylineCyan,
-                        SkylineBlue
-                    )
-                ),
+                brush = Brush.sweepGradient(arcColors),
                 startAngle = -90f,
                 sweepAngle = 360f * animatedProgress,
                 useCenter = false,
@@ -1318,10 +1325,10 @@ fun CircularDaysGauge(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "$days",
+                text = if (days <= 0) "0" else "$days",
                 fontSize = numberFontSize,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (isDark) Color.White else Color(0xFF0F172A),
+                color = if (days <= 0) SkylineError else if (isDark) Color.White else Color(0xFF0F172A),
                 lineHeight = numberFontSize
             )
             Text(
@@ -1336,7 +1343,7 @@ fun CircularDaysGauge(
                 text = "$pctInt%",
                 fontSize = percentFontSize,
                 fontWeight = FontWeight.Bold,
-                color = SkylineSuccess,
+                color = accentColor,
                 lineHeight = percentFontSize
             )
         }

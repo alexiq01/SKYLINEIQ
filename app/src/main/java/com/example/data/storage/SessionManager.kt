@@ -56,10 +56,12 @@ class SessionManager(context: Context) {
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_CACHED_DATA = "cached_subscription_json"
         private const val KEY_LAST_UPDATE = "last_update_millis"
+        private const val KEY_IS_LOGGED_IN = "is_logged_in"
     }
 
     fun saveSession(token: String, username: String, password: String? = null) {
         safeEdit { editor ->
+            editor.putBoolean(KEY_IS_LOGGED_IN, true)
             editor.putString(KEY_TOKEN, token)
             editor.putString(KEY_USERNAME, username)
             if (!password.isNullOrBlank()) {
@@ -81,8 +83,13 @@ class SessionManager(context: Context) {
     }
 
     fun hasValidSession(): Boolean {
+        val explicitLoggedIn = try {
+            prefs.getBoolean(KEY_IS_LOGGED_IN, false)
+        } catch (_: Exception) {
+            false
+        }
         val token = getToken()
-        return !token.isNullOrBlank()
+        return explicitLoggedIn || !token.isNullOrBlank()
     }
 
     fun hasSavedCredentials(): Boolean {
@@ -112,6 +119,7 @@ class SessionManager(context: Context) {
 
     fun clearSession(clearSavedCredentials: Boolean = false) {
         safeEdit { editor ->
+            editor.putBoolean(KEY_IS_LOGGED_IN, false)
             editor.remove(KEY_TOKEN)
             editor.remove(KEY_CACHED_DATA)
             editor.remove(KEY_LAST_UPDATE)

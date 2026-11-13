@@ -255,50 +255,67 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Native Apple Liquid Glass Brand Icon
-                LiquidGlassCard(
-                    modifier = Modifier.size(94.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    isDark = isDark,
-                    elevation = 10.dp
+                // Soft Brand Aura & Liquid Glass Icon
+                Box(
+                    contentAlignment = Alignment.Center
                 ) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier
+                            .size(126.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(
+                                        SkylineBlue.copy(alpha = if (isDark) 0.28f else 0.16f),
+                                        SkylineCyan.copy(alpha = 0.05f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                    LiquidGlassCard(
+                        modifier = Modifier.size(92.dp),
+                        shape = RoundedCornerShape(28.dp),
+                        isDark = isDark,
+                        elevation = 10.dp
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_skyline_logo),
-                            contentDescription = stringResource(R.string.app_name),
-                            modifier = Modifier
-                                .size(74.dp)
-                                .clip(RoundedCornerShape(22.dp))
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_skyline_logo),
+                                contentDescription = stringResource(R.string.app_name),
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(22.dp))
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
                     text = "SKYLINE",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = if (isDark) Color.White else Color(0xFF0F172A),
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.4.sp
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "INTERNET SERVICES",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SkylineBlue,
-                    letterSpacing = 2.sp
+                    text = "بوابة إدارة اشتراك الإنترنت",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SkylineBlue
                 )
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(26.dp))
 
                 // Apple Liquid Glass Login Widget Container
                 LiquidGlassCard(
@@ -315,13 +332,19 @@ fun LoginScreen(
                             .padding(24.dp)
                     ) {
                         Text(
-                            text = "تسجيل الدخول",
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
+                            text = "مرحباً بعودتك",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "أدخل بيانات حسابك لمتابعة تفاصيل الاشتراك والرصيد",
+                            fontSize = 12.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
-                        Spacer(modifier = Modifier.height(18.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
                         // Username Field
                         Text(

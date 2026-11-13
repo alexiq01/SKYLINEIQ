@@ -90,10 +90,18 @@ class LoginViewModel(
             }.onFailure { error ->
                 val errorMsg = error.message.orEmpty()
                 val message = when {
+                    errorMsg.contains("error_not_allowed", ignoreCase = true) ->
+                        "خادم المزود رفض تسجيل الدخول من الشبكة الحالية.\n\nيرجى التأكد من اتصالك بشبكة Skyline مباشرةً وليس من شبكة خارجية أو معاينة سحابية، أو مراجعة الوكيل على الرقم: 07821082008"
+                    errorMsg.contains("unknown_user", ignoreCase = true) ->
+                        "لم يتم العثور على الحساب. يرجى التأكد من اسم المستخدم أو الاتصال بشبكة Skyline."
+                    errorMsg.contains("captcha", ignoreCase = true) ->
+                        "يتطلب الخادم رمز تحقق إضافي. يرجى المحاولة لاحقاً أو مراجعة الوكيل."
                     errorMsg.contains("err_invalid_login", ignoreCase = true) ||
                     errorMsg.contains("invalid", ignoreCase = true) ||
                     errorMsg.contains("401") || errorMsg.contains("403") ->
                         "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من البيانات أو مراجعة الوكيل المعتمد."
+                    errorMsg.startsWith("server_error_", ignoreCase = true) ->
+                        "حدث خطأ مؤقت في الخادم، يرجى المحاولة لاحقاً."
                     errorMsg.contains("network", ignoreCase = true) ||
                     error is java.net.UnknownHostException || error is java.net.SocketTimeoutException ->
                         "تعذر الاتصال بخادم Skyline. يرجى التأكد من تشغيل البيانات أو الاتصال بالشبكة."

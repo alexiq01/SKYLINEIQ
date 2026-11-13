@@ -229,8 +229,8 @@ fun SubscriptionDetailsScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                        color = Color(0xFFFEF2F2),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f))
+                        color = if (isDark) Color(0x28EF4444) else Color(0xFFFEF2F2),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.45f))
                     ) {
                         Column(
                             modifier = Modifier
@@ -241,7 +241,7 @@ fun SubscriptionDetailsScreen(
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = null,
-                                tint = Color(0xFFDC2626),
+                                tint = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626),
                                 modifier = Modifier.size(32.dp)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
@@ -249,12 +249,12 @@ fun SubscriptionDetailsScreen(
                                 text = "انتهى اشتراك هذه الباقة",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF991B1B)
+                                color = if (isDark) Color(0xFFFCA5A5) else Color(0xFF991B1B)
                             )
                             Text(
                                 text = "توقفت الخدمة مؤقتاً، يرجى تفعيل الاشتراك فوراً أو التواصل مع الوكيل",
                                 fontSize = 12.sp,
-                                color = Color(0xFFB91C1C),
+                                color = if (isDark) Color(0xFFFECACA) else Color(0xFFB91C1C),
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -464,24 +464,34 @@ fun SubscriptionDetailsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Sufficiency status chip
+                val isSufficient = currentBalance >= planPrice
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    color = if (currentBalance >= planPrice) Color(0xFFECFDF5) else Color(0xFFF1F5F9)
+                    color = when {
+                        isSufficient && isDark -> Color(0x2410B981)
+                        isSufficient -> Color(0xFFECFDF5)
+                        isDark -> Color(0x2E1E293B)
+                        else -> Color(0xFFF1F5F9)
+                    }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (currentBalance >= planPrice) Icons.Default.CheckCircle else Icons.Default.Info,
+                            imageVector = if (isSufficient) Icons.Default.CheckCircle else Icons.Default.Info,
                             contentDescription = null,
-                            tint = if (currentBalance >= planPrice) Color(0xFF059669) else Color(0xFF64748B),
+                            tint = if (isSufficient) {
+                                if (isDark) Color(0xFF34D399) else Color(0xFF059669)
+                            } else {
+                                if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                            },
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (currentBalance >= planPrice) {
+                            text = if (isSufficient) {
                                 "رصيدك كافٍ لتجديد الباقة تلقائياً عند موعد الانتهاء"
                             } else {
                                 val diff = planPrice - currentBalance
@@ -489,7 +499,11 @@ fun SubscriptionDetailsScreen(
                             },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (currentBalance >= planPrice) Color(0xFF065F46) else Color(0xFF475569)
+                            color = if (isSufficient) {
+                                if (isDark) Color(0xFF6EE7B7) else Color(0xFF065F46)
+                            } else {
+                                if (isDark) Color(0xFFCBD5E1) else Color(0xFF475569)
+                            }
                         )
                     }
                 }

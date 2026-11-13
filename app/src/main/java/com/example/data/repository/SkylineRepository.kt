@@ -24,6 +24,8 @@ class SkylineRepository(
     val sessionManager: SessionManager = SessionManager(context)
 ) {
 
+    private val serializeNullsGson = com.google.gson.GsonBuilder().serializeNulls().create()
+
     suspend fun login(username: String, password: String): Result<String> = withContext(Dispatchers.IO) {
         try {
             val credentials = LoginCredentials(
@@ -33,21 +35,36 @@ class SkylineRepository(
                 captchaText = null,
                 sessionId = UUID.randomUUID().toString()
             )
-            val json = ApiClient.gson.toJson(credentials)
+            val json = serializeNullsGson.toJson(credentials)
             val encryptedPayload = OpenSslCrypto.encrypt(json)
             val request = EncryptedPayloadRequest(payload = encryptedPayload)
 
-            val response = apiService.login(request)
+            val response = apiService.login(request, "Bearer null")
             if (response.isSuccessful) {
                 val body = response.body()
                 val token = body?.token
                 if (!token.isNullOrBlank() && (body.status == 200 || body.status == 1 || body.status == null)) {
                     sessionManager.saveSession(token = token, username = username.trim(), password = password)
-                    Result.success(token)
-                } else {
-                    val msg = body?.message ?: "err_invalid_login"
-                    Result.failure(Exception(msg))
+                    return@withContext Result.success(token)
                 }
+
+                val msg = body?.message ?: "err_invalid_login"
+                // If SAS4 server rejects password login (e.g., error_not_allowed / status -3 when IP/auto-login is enforced),
+                // check real SAS4 auth/autoLogin in case user is connected directly to the Skyline ISP network.
+                if (msg.equals("error_not_allowed", ignoreCase = true) || body?.status == -3) {
+                    try {
+                        val autoRes = apiService.autoLogin()
+                        val autoBody = autoRes.body()
+                        val autoToken = autoBody?.token
+                        if (autoRes.isSuccessful && !autoToken.isNullOrBlank() && autoBody.status == 200) {
+                            sessionManager.saveSession(token = autoToken, username = username.trim(), password = password)
+                            return@withContext Result.success(autoToken)
+                        }
+                    } catch (_: Exception) {
+                        // Fall through and surface error_not_allowed
+                    }
+                }
+                Result.failure(Exception(msg))
             } else {
                 val errBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
                 val parsedMsg = try {
@@ -178,26 +195,79 @@ class SkylineRepository(
 
     suspend fun checkProviderConnectionAndAutoLogin(): Result<String> = autoLoginWithGps(null, null)
 
+    private suspend fun trySilentTokenRefresh(): String? {
+        val savedUser = sessionManager.getUsername()
+        val savedPass = sessionManager.getPassword()
+        if (!savedUser.isNullOrBlank() && !savedPass.isNullOrBlank()) {
+            val res = login(savedUser, savedPass)
+            if (res.isSuccess) {
+                return res.getOrNull()
+            }
+        }
+        return try {
+            val autoRes = apiService.autoLogin()
+            val autoBody = autoRes.body()
+            val autoToken = autoBody?.token
+            if (autoRes.isSuccessful && !autoToken.isNullOrBlank() && autoBody.status == 200) {
+                sessionManager.saveSession(
+                    token = autoToken,
+                    username = savedUser ?: "مشترك سكايلان",
+                    password = savedPass
+                )
+                autoToken
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun fetchSubscriptionData(): Result<UnifiedSubscription> = withContext(Dispatchers.IO) {
-        val token = sessionManager.getToken()
+        var token = sessionManager.getToken()
         if (token.isNullOrBlank()) {
-            return@withContext Result.failure(Exception("unauthorized"))
+            token = trySilentTokenRefresh()
+        }
+        if (token.isNullOrBlank()) {
+            val cached = sessionManager.getCachedSubscription()
+            return@withContext if (cached != null) {
+                Result.success(cached)
+            } else {
+                Result.failure(Exception("sync_unavailable"))
+            }
         }
 
-        val authHeader = "Bearer $token"
-
         try {
-            val userDeferred = async { apiService.getUser(authHeader) }
-            val serviceDeferred = async { apiService.getService(authHeader) }
-            val dashboardDeferred = async { apiService.getDashboard(authHeader) }
+            var authHeader = "Bearer $token"
+            var userDeferred = async { apiService.getUser(authHeader) }
+            var serviceDeferred = async { apiService.getService(authHeader) }
+            var dashboardDeferred = async { apiService.getDashboard(authHeader) }
 
-            val userRes = userDeferred.await()
-            val serviceRes = serviceDeferred.await()
-            val dashboardRes = dashboardDeferred.await()
+            var userRes = userDeferred.await()
+            var serviceRes = serviceDeferred.await()
+            var dashboardRes = dashboardDeferred.await()
 
+            // If token expired (401), silently refresh token without logging user out
             if (userRes.code() == 401 || serviceRes.code() == 401 || dashboardRes.code() == 401) {
-                sessionManager.clearSession()
-                return@withContext Result.failure(Exception("token_expired"))
+                val refreshedToken = trySilentTokenRefresh()
+                if (!refreshedToken.isNullOrBlank()) {
+                    authHeader = "Bearer $refreshedToken"
+                    userDeferred = async { apiService.getUser(authHeader) }
+                    serviceDeferred = async { apiService.getService(authHeader) }
+                    dashboardDeferred = async { apiService.getDashboard(authHeader) }
+
+                    userRes = userDeferred.await()
+                    serviceRes = serviceDeferred.await()
+                    dashboardRes = dashboardDeferred.await()
+                }
+            }
+
+            // Never kick user out on 401 — return cached data if server still rejects
+            if (userRes.code() == 401 || serviceRes.code() == 401 || dashboardRes.code() == 401) {
+                val cached = sessionManager.getCachedSubscription()
+                return@withContext if (cached != null) {
+                    Result.success(cached)
+                } else {
+                    Result.failure(Exception("sync_unavailable"))
+                }
             }
 
             val user = if (userRes.isSuccessful) userRes.body()?.data else null
@@ -237,7 +307,9 @@ class SkylineRepository(
     suspend fun redeemCode(pin: String): Result<GenericActionResponse> = withContext(Dispatchers.IO) {
         val token = sessionManager.getToken() ?: return@withContext Result.failure(Exception("unauthorized"))
         try {
-            val response = apiService.redeem("Bearer $token", RedeemRequest(pin = pin.trim()))
+            val json = ApiClient.gson.toJson(RedeemRequest(pin = pin.trim()))
+            val encryptedRequest = EncryptedPayloadRequest(payload = OpenSslCrypto.encrypt(json))
+            val response = apiService.redeem("Bearer $token", encryptedRequest)
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
                 if (body.status == 200 || body.status == 1 || body.status == null) {

@@ -26,9 +26,16 @@ class BootReceiver : BroadcastReceiver() {
                 // Initialize notification channels
                 com.example.notifications.NotificationInboxManager.init(context)
 
-                // 1. Reschedule periodic background checks (every 12h)
-                NotificationScheduler.schedulePeriodicSubscriptionCheck(context)
+                val settings = NotificationScheduler.getNotificationSettings(context)
                 NotificationScheduler.schedulePeriodicSupportNotification(context)
+
+                if (!settings.backgroundAlertsEnabled) {
+                    NotificationScheduler.cancelAllScheduledAlerts(context)
+                    return
+                }
+
+                // 1. Reschedule periodic background checks
+                NotificationScheduler.schedulePeriodicSubscriptionCheck(context)
 
                 // 2. Schedule exact expiration alerts for the cached subscription
                 val sessionManager = SessionManager(context)

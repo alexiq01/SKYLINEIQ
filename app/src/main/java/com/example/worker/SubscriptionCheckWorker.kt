@@ -20,6 +20,13 @@ class SubscriptionCheckWorker(
 
     override suspend fun doWork(): Result {
         return try {
+            val settings = NotificationScheduler.getNotificationSettings(context)
+            if (!settings.backgroundAlertsEnabled) {
+                Log.d(TAG, "Background WorkManager alerts disabled by user; cancelling and skipping")
+                NotificationScheduler.cancelAllScheduledAlerts(context)
+                return Result.success()
+            }
+
             val sessionManager = SessionManager(context)
             if (!sessionManager.hasValidSession()) {
                 Log.d(TAG, "No valid user session; skipping subscription check")

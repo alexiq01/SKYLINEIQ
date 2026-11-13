@@ -72,19 +72,15 @@ class HomeViewModel(
                     lastUpdatedFormatted = formatTimestamp(unified.lastUpdatedMillis),
                     errorMessage = null
                 )
-            }.onFailure { error ->
-                if (error.message == "token_expired" || error.message == "unauthorized") {
-                    _events.emit(HomeEvent.SessionExpired)
-                } else {
-                    val cached = repository.sessionManager.getCachedSubscription()
-                    _uiState.value = _uiState.value.copy(
-                        subscription = cached ?: _uiState.value.subscription,
-                        isLoading = false,
-                        isRefreshing = false,
-                        isOfflineMode = true,
-                        errorMessage = "تعذر تحديث البيانات من الخادم، يتم عرض آخر بيانات متوفرة"
-                    )
-                }
+            }.onFailure {
+                val cached = repository.sessionManager.getCachedSubscription()
+                _uiState.value = _uiState.value.copy(
+                    subscription = cached ?: _uiState.value.subscription,
+                    isLoading = false,
+                    isRefreshing = false,
+                    isOfflineMode = true,
+                    errorMessage = "تعذر تحديث البيانات من الخادم، يتم عرض آخر بيانات متوفرة"
+                )
             }
         }
     }

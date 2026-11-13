@@ -112,6 +112,7 @@ dependencies {
   implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.security.crypto)
+  implementation(libs.androidx.biometric)
   implementation(libs.gson)
   implementation(libs.converter.gson)
   implementation(libs.androidx.room.ktx)

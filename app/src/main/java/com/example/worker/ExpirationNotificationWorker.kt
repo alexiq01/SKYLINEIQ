@@ -14,8 +14,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.MainActivity
 import com.example.R
-import com.example.ui.components.DEVELOPER_WHATSAPP_NUMBER
-import com.example.ui.components.DEVELOPER_WHATSAPP_URL
+import com.example.ui.components.AGENT_RESELLER_WHATSAPP_NUMBER
 
 class ExpirationNotificationWorker(
     private val context: Context,
@@ -124,7 +123,7 @@ class ExpirationNotificationWorker(
                 } else {
                     Uri.encode("مرحباً، أود الاستفسار عن تجديد اشتراكي في خدمة Skyline.")
                 }
-                data = Uri.parse("https://wa.me/${DEVELOPER_WHATSAPP_NUMBER.replace("+", "")}?text=$encodedMsg")
+                data = Uri.parse("https://wa.me/${AGENT_RESELLER_WHATSAPP_NUMBER.replace("+", "")}?text=$encodedMsg")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             val whatsappPendingIntent = PendingIntent.getActivity(
@@ -139,7 +138,11 @@ class ExpirationNotificationWorker(
                 whatsappPendingIntent
             )
 
-            notificationManager.notify(notificationId, builder.build())
+            try {
+                notificationManager.notify(notificationId, builder.build())
+            } catch (_: SecurityException) {
+                // Notification permission not yet granted on Android 13+; inbox entry will still be recorded
+            }
 
             // Record into local Notification Inbox so user sees it in their Notifications tab
             try {
@@ -157,6 +160,19 @@ class ExpirationNotificationWorker(
     override suspend fun doWork(): Result {
         val alertType = inputData.getString(KEY_ALERT_TYPE) ?: ALERT_3D
         val expirationDate = inputData.getString(KEY_EXPIRATION_DATE) ?: ""
+        val settings = NotificationScheduler.getNotificationSettings(context)
+        if (!settings.backgroundAlertsEnabled) {
+            return Result.success()
+        }
+        val isAlertEnabled = when (alertType) {
+            ALERT_3D -> settings.alert3DaysEnabled
+            ALERT_24H -> settings.alert24HoursEnabled
+            ALERT_1H, ALERT_EXPIRED -> settings.alertOnExpirationEnabled
+            else -> true
+        }
+        if (!isAlertEnabled) {
+            return Result.success()
+        }
         sendNotification(context, alertType, expirationDate)
         return Result.success()
     }
