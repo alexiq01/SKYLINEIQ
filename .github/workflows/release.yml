@@ -116,10 +116,10 @@ jobs:
           fi
 
       - name: Resolve dependencies
-        run: ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon > /dev/null
+        run: ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8" > /dev/null
 
       - name: Build Release APK
-        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon
+        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8"
 
       - name: Verify Release APK & calculate size
         id: verify
