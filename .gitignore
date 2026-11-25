@@ -15,5 +15,14 @@
 .cxx
 local.properties
 .env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+*.apk
+*.aab
+release-output/
 debug.keystore
 *-debug.log
+

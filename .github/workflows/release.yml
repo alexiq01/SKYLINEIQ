@@ -1,0 +1,186 @@
+name: Android Release CI/CD
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle & Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Grant execute permission for Gradle wrapper
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --version
+
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_BASE64" ] && [ ! -f app/google-services.json ]; then
+            echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          fi
+
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ]; then
+            KEYSTORE_FILE="${RUNNER_TEMP}/release-upload.keystore"
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+            {
+              echo "KEYSTORE_PATH=$KEYSTORE_FILE"
+              echo "STORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "KEY_ALIAS=$KEY_ALIAS"
+              echo "KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            } >> "$GITHUB_ENV"
+            echo "Configured production release signing from GitHub Secrets."
+          else
+            echo "::warning::Release signing secrets (KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS) not set. Using temporary fallback keystore."
+            if [ -f debug.keystore.base64 ]; then
+              base64 --decode debug.keystore.base64 > debug.keystore
+            elif [ ! -f debug.keystore ]; then
+              keytool -genkeypair -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+
+      - name: Resolve dependencies
+        run: ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon > /dev/null
+
+      - name: Build Release APK
+        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon
+
+      - name: Verify Release APK & calculate size
+        id: verify
+        run: |
+          APK=$(find . -type f -path "*/outputs/apk/*release/*.apk" | sort | head -n 1)
+
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "ERROR: Release APK was not generated."
+            exit 1
+          fi
+
+          if [[ "$APK" == *-unsigned.apk ]]; then
+            echo "ERROR: Generated APK is unsigned: $APK"
+            exit 1
+          fi
+
+          APK_CLEAN="${APK#./}"
+          APK_NAME=$(basename "$APK_CLEAN")
+          APK_BYTES=$(wc -c < "$APK_CLEAN")
+          APK_SIZE=$(awk -v b="$APK_BYTES" 'BEGIN {
+            if (b >= 1048576) printf "%.2f MB", b / 1048576;
+            else printf "%.2f KB", b / 1024;
+          }')
+
+          BUILD_TOOLS_DIR=$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)
+          if [ -z "$BUILD_TOOLS_DIR" ]; then
+            echo "ERROR: Android build-tools not found."
+            exit 1
+          fi
+
+          BADGING=$("$BUILD_TOOLS_DIR/aapt2" dump badging "$APK_CLEAN")
+          echo "$BADGING" | head -n 5
+
+          if echo "$BADGING" | grep -qi "application-debuggable"; then
+            echo "ERROR: APK is marked debuggable! Expected a release build."
+            exit 1
+          fi
+
+          PACKAGE_NAME=$(echo "$BADGING" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          VERSION_CODE=$(echo "$BADGING" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
+          VERSION_NAME=$(echo "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+
+          if [ -z "$PACKAGE_NAME" ] || [ -z "$VERSION_CODE" ] || [ -z "$VERSION_NAME" ]; then
+            echo "ERROR: Failed to extract package/version metadata from APK."
+            exit 1
+          fi
+
+          "$BUILD_TOOLS_DIR/apksigner" verify --print-certs "$APK_CLEAN"
+
+          echo "Release APK:"
+          echo "$APK_CLEAN"
+          echo ""
+          echo "APK size:"
+          echo "$APK_SIZE ($APK_BYTES bytes)"
+          echo "Package: $PACKAGE_NAME"
+          echo "Version: $VERSION_NAME (Build $VERSION_CODE)"
+
+          {
+            echo "apk_path=$APK_CLEAN"
+            echo "apk_name=$APK_NAME"
+            echo "apk_size=$APK_SIZE"
+            echo "apk_bytes=$APK_BYTES"
+            echo "package_name=$PACKAGE_NAME"
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Android Release APK Verified"
+            echo "- **APK Path:** \`$APK_CLEAN\`"
+            echo "- **APK File:** \`$APK_NAME\`"
+            echo "- **APK Size:** $APK_SIZE ($APK_BYTES bytes)"
+            echo "- **Package:** \`$PACKAGE_NAME\`"
+            echo "- **Version:** $VERSION_NAME (Build $VERSION_CODE)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: ${{ steps.verify.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.verify.outputs.apk_path }}
+          body: |
+            Android Release
+
+            Version: ${{ steps.verify.outputs.version_name }}
+            Build: ${{ steps.verify.outputs.version_code }}
+            Variant: release
+            Package: ${{ steps.verify.outputs.package_name }}
+
+            APK:
+            ${{ steps.verify.outputs.apk_name }} (${{ steps.verify.outputs.apk_size }})
