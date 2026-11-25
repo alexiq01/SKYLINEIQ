@@ -2,20 +2,16 @@ package com.example.ui.subscription
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,35 +22,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CardMembership
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,10 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -75,21 +56,18 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.api.DashboardData
 import com.example.data.api.ServiceData
 import com.example.data.api.UserAccountData
-import com.example.ui.components.AGENT_RESELLER_PHONE_NUMBER
 import com.example.ui.components.AGENT_RESELLER_WHATSAPP_NUMBER
 import com.example.ui.components.InfoRow
 import com.example.ui.components.LiquidGlassCard
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.SkylineBlue
 import com.example.ui.theme.SkylineCyan
-import com.example.ui.theme.SkylineError
 import com.example.ui.theme.SkylineOnline
 import com.example.ui.theme.SkylineSuccess
 import com.example.ui.theme.isAppInDarkTheme
@@ -97,7 +75,6 @@ import com.example.ui.util.HapticFeedbackHelper
 import com.example.worker.NotificationScheduler
 import kotlinx.coroutines.delay
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 /**
  * Subscription Details Screen
@@ -107,7 +84,6 @@ import java.util.concurrent.TimeUnit
  * 3. Detailed subscription & package breakdown
  * 4. Direct renewal and contact agent actions
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubscriptionDetailsScreen(
     user: UserAccountData?,
@@ -123,6 +99,7 @@ fun SubscriptionDetailsScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val isDark = isAppInDarkTheme()
+    val dangerColor = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
 
     // Real-time ticking clock for expiration countdown
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -151,12 +128,13 @@ fun SubscriptionDetailsScreen(
 
     // Balance and Progress calculation
     val currentBalance = user?.balance ?: dashboard?.balance ?: 0.0
-    val planPrice = service?.price ?: 45000.0
-    val balanceProgress = if (planPrice > 0) {
+    val planPrice = service?.price ?: 0.0
+    val hasValidPrice = planPrice > 0.0
+    val balanceProgress = if (hasValidPrice) {
         (currentBalance / planPrice).toFloat().coerceIn(0f, 1f)
     } else 0f
 
-    val isExpiringSoon = countdownDays in 1..3
+    val isExpiringSoon = expirationMillis != null && !isExpired && countdownDays in 0..3
 
     Column(
         modifier = Modifier
@@ -185,7 +163,10 @@ fun SubscriptionDetailsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
@@ -199,7 +180,7 @@ fun SubscriptionDetailsScreen(
                             Icon(
                                 imageVector = Icons.Default.AccessTime,
                                 contentDescription = null,
-                                tint = if (isExpired) Color(0xFFDC2626) else SkylineBlue,
+                                tint = if (isExpired) dangerColor else SkylineBlue,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -212,19 +193,73 @@ fun SubscriptionDetailsScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (expirationDateStr.isNotBlank()) "الموعد: $expirationDateStr" else "جاري المزامنة...",
+                                text = if (expirationDateStr.isNotBlank()) "الموعد: $expirationDateStr" else "غير متوفر حالياً",
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    StatusBadge(isActive = !isExpired && isSubscriptionActive)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusBadge(isActive = !isExpired && isSubscriptionActive)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                HapticFeedbackHelper.performClick(context, haptic)
+                                onRefresh()
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("btn_refresh_subscription_details")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "تحديث تفاصيل الاشتراك",
+                                tint = SkylineBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                if (isExpired) {
+                if (expirationMillis == null) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isDark) Color(0x2E1E293B) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, SkylineBlue.copy(alpha = 0.25f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = SkylineBlue,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "موعد الانتهاء قيد المزامنة",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "لم يتم العثور على تاريخ انتهاء صالح بعد. اضغط على زر التحديث أعلاه للمزامنة.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else if (isExpired) {
                     // Expired Alert State
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -241,7 +276,7 @@ fun SubscriptionDetailsScreen(
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = null,
-                                tint = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626),
+                                tint = dangerColor,
                                 modifier = Modifier.size(32.dp)
                             )
                             Spacer(modifier = Modifier.height(6.dp))
@@ -270,13 +305,13 @@ fun SubscriptionDetailsScreen(
                             value = countdownDays,
                             label = "يوم",
                             modifier = Modifier.weight(1f),
-                            highlightColor = if (isExpiringSoon) Color(0xFFEF4444) else SkylineBlue
+                            highlightColor = if (isExpiringSoon) dangerColor else SkylineBlue
                         )
                         CountdownUnitBox(
                             value = countdownHours,
                             label = "ساعة",
                             modifier = Modifier.weight(1f),
-                            highlightColor = if (isExpiringSoon) Color(0xFFEF4444) else SkylineBlue
+                            highlightColor = if (isExpiringSoon) dangerColor else SkylineBlue
                         )
                         CountdownUnitBox(
                             value = countdownMinutes,
@@ -317,7 +352,7 @@ fun SubscriptionDetailsScreen(
                                 text = "${(animatedCycleProgress * 100).toInt()}% متبقي",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isExpiringSoon) Color(0xFFEF4444) else SkylineBlue
+                                color = if (isExpiringSoon) dangerColor else SkylineBlue
                             )
                         }
                         Spacer(modifier = Modifier.height(6.dp))
@@ -327,7 +362,7 @@ fun SubscriptionDetailsScreen(
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
-                            color = if (isExpiringSoon) Color(0xFFEF4444) else SkylineBlue,
+                            color = if (isExpiringSoon) dangerColor else SkylineBlue,
                             trackColor = if (isDark) Color(0xFF1E3A5F) else Color(0xFFE2E8F0)
                         )
                     }
@@ -391,14 +426,14 @@ fun SubscriptionDetailsScreen(
                     val balancePercent = (balanceProgress * 100).toInt()
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (balanceProgress >= 1f) SkylineSuccess.copy(alpha = 0.15f)
+                        color = if (hasValidPrice && balanceProgress >= 1f) SkylineSuccess.copy(alpha = 0.15f)
                         else SkylineCyan.copy(alpha = 0.15f)
                     ) {
                         Text(
-                            text = "$balancePercent%",
+                            text = if (hasValidPrice) "$balancePercent%" else "—",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (balanceProgress >= 1f) SkylineSuccess else SkylineBlue,
+                            color = if (hasValidPrice && balanceProgress >= 1f) SkylineSuccess else SkylineBlue,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -420,7 +455,7 @@ fun SubscriptionDetailsScreen(
                         .height(12.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .testTag("progress_remaining_balance"),
-                    color = if (balanceProgress >= 1f) SkylineSuccess else SkylineCyan,
+                    color = if (hasValidPrice && balanceProgress >= 1f) SkylineSuccess else SkylineCyan,
                     trackColor = if (isDark) Color(0xFF1E3A5F) else Color(0xFFE2E8F0)
                 )
 
@@ -453,7 +488,7 @@ fun SubscriptionDetailsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "IQD ${String.format(Locale.US, "%,.0f", planPrice)}",
+                            text = if (hasValidPrice) "IQD ${String.format(Locale.US, "%,.0f", planPrice)}" else "غير محدد",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -464,7 +499,7 @@ fun SubscriptionDetailsScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Sufficiency status chip
-                val isSufficient = currentBalance >= planPrice
+                val isSufficient = hasValidPrice && currentBalance >= planPrice
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
@@ -491,11 +526,13 @@ fun SubscriptionDetailsScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isSufficient) {
-                                "رصيدك كافٍ لتجديد الباقة تلقائياً عند موعد الانتهاء"
-                            } else {
-                                val diff = planPrice - currentBalance
-                                "المتبقي لإتمام التجديد: IQD ${String.format(Locale.US, "%,.0f", diff)}"
+                            text = when {
+                                !hasValidPrice -> "سعر الباقة غير متوفر حالياً لحساب نسبة التجديد"
+                                isSufficient -> "رصيدك كافٍ لتجديد الباقة تلقائياً عند موعد الانتهاء"
+                                else -> {
+                                    val diff = planPrice - currentBalance
+                                    "المتبقي لإتمام التجديد: IQD ${String.format(Locale.US, "%,.0f", diff)}"
+                                }
                             },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -551,46 +588,48 @@ fun SubscriptionDetailsScreen(
 
                 InfoRow(
                     label = "اسم الباقة الحالية",
-                    value = service?.profileName ?: "2-Nitro",
+                    value = service?.profileName?.takeIf { it.isNotBlank() } ?: "—",
                     icon = Icons.Default.CardMembership,
                     valueColor = SkylineBlue
                 )
                 InfoRow(
                     label = stringResource(R.string.client),
-                    value = user?.name ?: user?.username ?: "ياسين طه",
+                    value = user?.name?.takeIf { it.isNotBlank() }
+                        ?: user?.username?.takeIf { it.isNotBlank() }
+                        ?: "—",
                     icon = Icons.Default.Person
                 )
                 InfoRow(
                     label = stringResource(R.string.username),
-                    value = user?.username ?: "ha@haq3",
+                    value = user?.username?.takeIf { it.isNotBlank() } ?: "—",
                     icon = Icons.Default.Badge
                 )
                 InfoRow(
                     label = stringResource(R.string.expiration_date),
                     value = NotificationScheduler.formatExpirationWithRemainingTime(expirationDateStr),
                     icon = Icons.Default.AccessTime,
-                    valueColor = if (isExpired) Color(0xFFDC2626) else SkylineBlue
+                    valueColor = if (isExpired) dangerColor else SkylineBlue
                 )
                 InfoRow(
                     label = "سعر الاشتراك",
-                    value = "IQD ${String.format(Locale.US, "%,.0f", planPrice)}",
+                    value = if (hasValidPrice) "IQD ${String.format(Locale.US, "%,.0f", planPrice)}" else "—",
                     icon = Icons.Default.CreditCard,
                     valueColor = SkylineSuccess
                 )
                 InfoRow(
                     label = "التجديد التلقائي",
-                    value = if (user?.autoRenew == 1) "مفعل تلقائياً" else "معطل",
+                    value = if (user?.autoRenew == 1) "مفعل تلقائياً" else "غير مفعل",
                     icon = Icons.Default.Autorenew,
                     valueColor = if (user?.autoRenew == 1) SkylineSuccess else Color.Gray
                 )
                 InfoRow(
                     label = "رقم العقد",
-                    value = user?.contractId ?: "300285",
+                    value = user?.contractId?.takeIf { it.isNotBlank() } ?: "—",
                     icon = Icons.Default.Info
                 )
                 InfoRow(
                     label = "الشركة المزودة",
-                    value = user?.company ?: "Skyline Internet",
+                    value = user?.company?.takeIf { it.isNotBlank() } ?: "Skyline Internet",
                     icon = Icons.Default.Wifi
                 )
             }
@@ -607,7 +646,8 @@ fun SubscriptionDetailsScreen(
                 onClick = {
                     HapticFeedbackHelper.performClick(context, haptic)
                     try {
-                        val msg = "مرحباً، أود الاستفسار عن اشتراكي وتجديده عبر الوكيل.\nاسم المستخدم: ${user?.username ?: ""}\nالباقة: ${service?.profileName ?: "2-Nitro"}"
+                        val planForMsg = service?.profileName?.takeIf { it.isNotBlank() } ?: "الباقة الحالية"
+                        val msg = "مرحباً، أود الاستفسار عن اشتراكي وتجديده عبر الوكيل.\nاسم المستخدم: ${user?.username ?: ""}\nالباقة: $planForMsg"
                         val intent = Intent(Intent.ACTION_VIEW).apply {
                             data = Uri.parse("https://wa.me/${AGENT_RESELLER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
                             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -618,6 +658,7 @@ fun SubscriptionDetailsScreen(
                 },
                 modifier = Modifier
                     .weight(1.2f)
+                    .defaultMinSize(minHeight = 48.dp)
                     .height(50.dp)
                     .testTag("btn_contact_agent_details"),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),

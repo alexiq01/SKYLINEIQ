@@ -2,6 +2,7 @@ package com.example.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.analytics.AnalyticsManager
 import com.example.data.api.UnifiedSubscription
 import com.example.data.repository.SkylineRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -64,6 +65,11 @@ class HomeViewModel(
         viewModelScope.launch {
             val result = repository.fetchSubscriptionData()
             result.onSuccess { unified ->
+                AnalyticsManager.logSubscriptionFetch(
+                    isRefresh = isRefresh,
+                    success = true,
+                    isFromCache = unified.isFromCache
+                )
                 _uiState.value = _uiState.value.copy(
                     subscription = unified,
                     isLoading = false,
@@ -74,12 +80,22 @@ class HomeViewModel(
                 )
             }.onFailure {
                 val cached = repository.sessionManager.getCachedSubscription()
+                val resolvedSub = cached ?: _uiState.value.subscription
+                AnalyticsManager.logSubscriptionFetch(
+                    isRefresh = isRefresh,
+                    success = false,
+                    isFromCache = resolvedSub != null
+                )
                 _uiState.value = _uiState.value.copy(
-                    subscription = cached ?: _uiState.value.subscription,
+                    subscription = resolvedSub,
                     isLoading = false,
                     isRefreshing = false,
-                    isOfflineMode = true,
-                    errorMessage = "تعذر تحديث البيانات من الخادم، يتم عرض آخر بيانات متوفرة"
+                    isOfflineMode = resolvedSub != null,
+                    errorMessage = if (resolvedSub != null) {
+                        "تعذر تحديث البيانات من الخادم، يتم عرض آخر بيانات متوفرة"
+                    } else {
+                        "تعذر تحميل بيانات الاشتراك من الخادم، يرجى التأكد من الاتصال والمحاولة مجدداً"
+                    }
                 )
             }
         }
@@ -88,15 +104,37 @@ class HomeViewModel(
     fun redeemPin(pin: String) {
         if (pin.isBlank()) return
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+        AnalyticsManager.logPinRenewalAttempt()
         viewModelScope.launch {
             val result = repository.redeemCode(pin)
             result.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    successMessage = "تم شحن الكارت بنجاح!"
+                AnalyticsManager.logPinRenewalResult(success = true)
+                val refreshed = repository.fetchSubscriptionData().getOrNull()
+                if (refreshed != null) {
+                    _uiState.value = _uiState.value.copy(
+                        subscription = refreshed,
+                        isLoading = false,
+                        isRefreshing = false,
+                        isOfflineMode = refreshed.isFromCache,
+                        lastUpdatedFormatted = formatTimestamp(refreshed.lastUpdatedMillis),
+                        successMessage = "تم شحن الكارت بنجاح!"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        successMessage = "تم شحن الكارت بنجاح!"
+                    )
+                }
+                val exp = refreshed?.service?.expiration
+                val plan = refreshed?.service?.profileName
+                com.example.worker.NotificationScheduler.sendSubscriptionRenewedNotification(
+                    context = repository.context,
+                    planName = plan,
+                    newExpirationDate = exp,
+                    dedupExpirationKey = exp
                 )
-                loadData(isRefresh = true)
             }.onFailure {
+                AnalyticsManager.logPinRenewalResult(success = false)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     errorMessage = "فشل شحن الكارت، يرجى التأكد من صحة الرمز المدخل"
@@ -106,6 +144,7 @@ class HomeViewModel(
     }
 
     fun logout() {
+        AnalyticsManager.logLogout()
         repository.logout()
         viewModelScope.launch {
             _events.emit(HomeEvent.LoggedOut)

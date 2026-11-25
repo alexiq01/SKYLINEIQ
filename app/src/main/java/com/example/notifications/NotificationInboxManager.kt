@@ -107,9 +107,19 @@ object NotificationInboxManager {
     }
 
     @Synchronized
+    fun hasNotificationForCycle(type: String, expirationMarker: String): Boolean {
+        if (expirationMarker.isBlank()) return false
+        return _notificationsFlow.value.any { item ->
+            item.type == type && item.message.contains(expirationMarker)
+        }
+    }
+
+    @Synchronized
     fun markAllAsRead(context: Context) {
         init(context)
-        val updated = _notificationsFlow.value.map { it.copy(isRead = true) }
+        val current = _notificationsFlow.value
+        if (current.none { !it.isRead }) return
+        val updated = current.map { if (it.isRead) it else it.copy(isRead = true) }
         _notificationsFlow.value = updated
         saveToStorage(context, updated)
     }

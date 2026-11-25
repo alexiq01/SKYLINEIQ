@@ -174,8 +174,11 @@ class SkylineRepository(
                 }
 
                 // If user is connected to local router/gateway
+                val fallbackUser = sessionManager.getCachedSubscription()?.user?.username
+                    ?: sessionManager.getUsername()
+                    ?: "مشترك سكايلان"
                 val sessionToken = "gps_session_${UUID.randomUUID()}"
-                sessionManager.saveSession(token = sessionToken, username = "ha@haq3")
+                sessionManager.saveSession(token = sessionToken, username = fallbackUser)
                 Result.success(sessionToken)
             } else {
                 Result.failure(Exception("provider_status_${response.code}"))
@@ -221,15 +224,23 @@ class SkylineRepository(
         }
     }
 
+    private fun isSuccessStatus(status: Int?): Boolean {
+        return status == null || status == 200 || status == 1
+    }
+
+    private fun isUnauthorizedResponse(httpCode: Int, bodyStatus: Int?): Boolean {
+        return httpCode == 401 || bodyStatus == 401
+    }
+
     suspend fun fetchSubscriptionData(): Result<UnifiedSubscription> = withContext(Dispatchers.IO) {
         var token = sessionManager.getToken()
         if (token.isNullOrBlank()) {
             token = trySilentTokenRefresh()
         }
+        val previousCached = sessionManager.getCachedSubscription()
         if (token.isNullOrBlank()) {
-            val cached = sessionManager.getCachedSubscription()
-            return@withContext if (cached != null) {
-                Result.success(cached)
+            return@withContext if (previousCached != null) {
+                Result.success(previousCached)
             } else {
                 Result.failure(Exception("sync_unavailable"))
             }
@@ -245,8 +256,12 @@ class SkylineRepository(
             var serviceRes = serviceDeferred.await()
             var dashboardRes = dashboardDeferred.await()
 
-            // If token expired (401), silently refresh token without logging user out
-            if (userRes.code() == 401 || serviceRes.code() == 401 || dashboardRes.code() == 401) {
+            val needsRefresh = isUnauthorizedResponse(userRes.code(), userRes.body()?.status) ||
+                isUnauthorizedResponse(serviceRes.code(), serviceRes.body()?.status) ||
+                isUnauthorizedResponse(dashboardRes.code(), dashboardRes.body()?.status)
+
+            // If token expired (HTTP 401 or JSON status 401), silently refresh token without logging user out
+            if (needsRefresh) {
                 val refreshedToken = trySilentTokenRefresh()
                 if (!refreshedToken.isNullOrBlank()) {
                     authHeader = "Bearer $refreshedToken"
@@ -261,43 +276,58 @@ class SkylineRepository(
             }
 
             // Never kick user out on 401 — return cached data if server still rejects
-            if (userRes.code() == 401 || serviceRes.code() == 401 || dashboardRes.code() == 401) {
-                val cached = sessionManager.getCachedSubscription()
-                return@withContext if (cached != null) {
-                    Result.success(cached)
+            val stillUnauthorized = isUnauthorizedResponse(userRes.code(), userRes.body()?.status) ||
+                isUnauthorizedResponse(serviceRes.code(), serviceRes.body()?.status) ||
+                isUnauthorizedResponse(dashboardRes.code(), dashboardRes.body()?.status)
+            if (stillUnauthorized) {
+                return@withContext if (previousCached != null) {
+                    Result.success(previousCached)
                 } else {
                     Result.failure(Exception("sync_unavailable"))
                 }
             }
 
-            val user = if (userRes.isSuccessful) userRes.body()?.data else null
-            val service = if (serviceRes.isSuccessful) serviceRes.body()?.data else null
-            val dashboard = if (dashboardRes.isSuccessful) dashboardRes.body()?.data else null
+            val freshUser = if (userRes.isSuccessful && isSuccessStatus(userRes.body()?.status)) userRes.body()?.data else null
+            val freshService = if (serviceRes.isSuccessful && isSuccessStatus(serviceRes.body()?.status)) serviceRes.body()?.data else null
+            val freshDashboard = if (dashboardRes.isSuccessful && isSuccessStatus(dashboardRes.body()?.status)) dashboardRes.body()?.data else null
+
+            // Protect cached data: never overwrite valid cache with an all-null response
+            if (freshUser == null && freshService == null && freshDashboard == null) {
+                return@withContext if (previousCached != null) {
+                    Result.success(previousCached)
+                } else {
+                    Result.failure(Exception("sync_empty_response"))
+                }
+            }
+
+            val mergedUser = freshUser ?: previousCached?.user
+            val mergedService = freshService ?: previousCached?.service
+            val mergedDashboard = freshDashboard ?: previousCached?.dashboard
+            val isPartialFallback = (freshUser == null || freshService == null) && previousCached != null
 
             val unified = UnifiedSubscription(
-                user = user,
-                service = service,
-                dashboard = dashboard,
+                user = mergedUser,
+                service = mergedService,
+                dashboard = mergedDashboard,
                 lastUpdatedMillis = System.currentTimeMillis(),
-                isFromCache = false
+                isFromCache = isPartialFallback
             )
 
             // Cache locally for offline resilience
             sessionManager.saveCache(unified)
 
             // Schedule WorkManager notifications for subscription expiration
-            service?.expiration?.let { exp ->
+            mergedService?.expiration?.let { exp ->
                 NotificationScheduler.scheduleSubscriptionAlerts(context, exp)
                 NotificationScheduler.schedulePeriodicSubscriptionCheck(context)
-                NotificationScheduler.checkAndTriggerRenewalNotificationIfNeeded(context, exp, service.profileName)
+                NotificationScheduler.checkAndTriggerRenewalNotificationIfNeeded(context, exp, mergedService.profileName)
             }
 
             Result.success(unified)
         } catch (e: Exception) {
             // Return cached data if available on network failure
-            val cached = sessionManager.getCachedSubscription()
-            if (cached != null) {
-                Result.success(cached)
+            if (previousCached != null) {
+                Result.success(previousCached)
             } else {
                 Result.failure(e)
             }
@@ -305,16 +335,29 @@ class SkylineRepository(
     }
 
     suspend fun redeemCode(pin: String): Result<GenericActionResponse> = withContext(Dispatchers.IO) {
-        val token = sessionManager.getToken() ?: return@withContext Result.failure(Exception("unauthorized"))
+        var token = sessionManager.getToken()
+        if (token.isNullOrBlank()) {
+            token = trySilentTokenRefresh()
+        }
+        if (token.isNullOrBlank()) {
+            return@withContext Result.failure(Exception("unauthorized"))
+        }
+
         try {
             val json = ApiClient.gson.toJson(RedeemRequest(pin = pin.trim()))
             val encryptedRequest = EncryptedPayloadRequest(payload = OpenSslCrypto.encrypt(json))
-            val response = apiService.redeem("Bearer $token", encryptedRequest)
+            var response = apiService.redeem("Bearer $token", encryptedRequest)
+
+            if (isUnauthorizedResponse(response.code(), response.body()?.status)) {
+                val refreshedToken = trySilentTokenRefresh()
+                if (!refreshedToken.isNullOrBlank()) {
+                    response = apiService.redeem("Bearer $refreshedToken", encryptedRequest)
+                }
+            }
+
             if (response.isSuccessful && response.body() != null) {
                 val body = response.body()!!
-                if (body.status == 200 || body.status == 1 || body.status == null) {
-                    // Send renewal notification immediately
-                    NotificationScheduler.sendSubscriptionRenewedNotification(context)
+                if (isSuccessStatus(body.status)) {
                     Result.success(body)
                 } else {
                     Result.failure(Exception(body.message ?: "err_redeem_failed"))
@@ -334,6 +377,10 @@ class SkylineRepository(
     }
 
     fun logout() {
+        try {
+            NotificationScheduler.cancelExpirationOneTimeWorks(context)
+        } catch (_: Exception) {
+        }
         sessionManager.clearSession()
     }
 }

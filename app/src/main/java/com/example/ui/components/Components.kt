@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -428,7 +429,7 @@ fun IPhone17DynamicIsland(
                         ) {
                             Column(horizontalAlignment = Alignment.Start) {
                                 Text(
-                                    text = profileName.ifBlank { "2-Nitro" },
+                                    text = profileName.ifBlank { "غير محدد" },
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
@@ -667,6 +668,7 @@ fun IPhoneFloatingDock(
 
                     Box(
                         modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                             .animateContentSize(
                                 animationSpec = spring(
                                     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -789,7 +791,7 @@ fun IPhoneControlCenterGrid(
             LiquidGlassCard(
                 modifier = Modifier
                     .weight(1f)
-                    .height(104.dp),
+                    .defaultMinSize(minHeight = 104.dp),
                 shape = RoundedCornerShape(22.dp),
                 isDark = isDark,
                 elevation = 5.dp,
@@ -801,9 +803,9 @@ fun IPhoneControlCenterGrid(
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     LiquidGlassSquircleIcon(
                         gradient = LiquidGradients.SkylineRenew,
@@ -822,7 +824,8 @@ fun IPhoneControlCenterGrid(
                         text = "تجديد وتفعيل",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2
                     )
                 }
             }
@@ -831,7 +834,7 @@ fun IPhoneControlCenterGrid(
             LiquidGlassCard(
                 modifier = Modifier
                     .weight(1f)
-                    .height(104.dp),
+                    .defaultMinSize(minHeight = 104.dp),
                 shape = RoundedCornerShape(22.dp),
                 isDark = isDark,
                 elevation = 5.dp,
@@ -843,9 +846,9 @@ fun IPhoneControlCenterGrid(
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     LiquidGlassSquircleIcon(
                         gradient = LiquidGradients.SkylineSpeed,
@@ -864,7 +867,8 @@ fun IPhoneControlCenterGrid(
                         text = "تفاصيل الباقة",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2
                     )
                 }
             }
@@ -873,7 +877,7 @@ fun IPhoneControlCenterGrid(
             LiquidGlassCard(
                 modifier = Modifier
                     .weight(1f)
-                    .height(104.dp),
+                    .defaultMinSize(minHeight = 104.dp),
                 shape = RoundedCornerShape(22.dp),
                 isDark = isDark,
                 elevation = 5.dp,
@@ -885,9 +889,9 @@ fun IPhoneControlCenterGrid(
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     LiquidGlassSquircleIcon(
                         gradient = LiquidGradients.WhatsApp,
@@ -906,7 +910,8 @@ fun IPhoneControlCenterGrid(
                         text = "واتساب الدعم",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2
                     )
                 }
             }
@@ -915,7 +920,7 @@ fun IPhoneControlCenterGrid(
             LiquidGlassCard(
                 modifier = Modifier
                     .weight(1f)
-                    .height(104.dp),
+                    .defaultMinSize(minHeight = 104.dp),
                 shape = RoundedCornerShape(22.dp),
                 isDark = isDark,
                 elevation = 5.dp,
@@ -927,9 +932,9 @@ fun IPhoneControlCenterGrid(
             ) {
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
                         .padding(12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     LiquidGlassSquircleIcon(
                         gradient = LiquidGradients.SkylineCall,
@@ -948,7 +953,8 @@ fun IPhoneControlCenterGrid(
                         text = "اتصال الوكيل",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2
                     )
                 }
             }
@@ -1240,7 +1246,7 @@ fun CardOnlineStatusIndicator(
                     onRefresh()
                 },
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(48.dp)
                     .testTag("btn_refresh_card_status")
             ) {
                 if (isRefreshing) {

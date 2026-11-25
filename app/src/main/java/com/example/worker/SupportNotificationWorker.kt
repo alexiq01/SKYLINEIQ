@@ -19,6 +19,10 @@ class SupportNotificationWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        val settings = NotificationScheduler.getNotificationSettings(context)
+        if (!settings.backgroundAlertsEnabled) {
+            return Result.success()
+        }
         sendSupportNotification(context)
         return Result.success()
     }

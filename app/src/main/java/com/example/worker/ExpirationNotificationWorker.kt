@@ -31,7 +31,18 @@ class ExpirationNotificationWorker(
         const val ALERT_1H = "1h"
         const val ALERT_EXPIRED = "expired"
 
-        fun sendNotification(context: Context, alertType: String, expirationDate: String) {
+        fun sendNotification(
+            context: Context,
+            alertType: String,
+            expirationDate: String,
+            isTest: Boolean = false
+        ) {
+            if (!isTest && expirationDate.isNotBlank() &&
+                NotificationScheduler.wasAlertNotifiedForDate(context, alertType, expirationDate)
+            ) {
+                return
+            }
+
             val notificationManager =
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -72,7 +83,22 @@ class ExpirationNotificationWorker(
 
             val title = "تنبيه اشتراك Skyline"
             val message = when (alertType) {
-                ALERT_3D -> "متبقي 3 أيام فقط على انتهاء اشتراكك في خدمة الإنترنت! يرجى تجديد الاشتراك لتجنب انقطاع الخدمة."
+                ALERT_3D -> {
+                    val expMillis = NotificationScheduler.parseDateToMillis(expirationDate)
+                    val remainingHours = if (expMillis != null) {
+                        ((expMillis - System.currentTimeMillis()) / java.util.concurrent.TimeUnit.HOURS.toMillis(1)).toInt()
+                    } else 72
+                    when {
+                        isTest || remainingHours >= 48 ->
+                            "متبقي 3 أيام فقط على انتهاء اشتراكك في خدمة الإنترنت! يرجى تجديد الاشتراك لتجنب انقطاع الخدمة."
+                        remainingHours >= 24 ->
+                            "متبقي أقل من يومين على انتهاء اشتراكك في خدمة الإنترنت! يرجى تجديد الاشتراك قريباً."
+                        remainingHours > 0 ->
+                            "متبقي $remainingHours ساعة فقط على انتهاء اشتراكك في خدمة الإنترنت! بادر بالتجديد الآن."
+                        else ->
+                            "متبقي 3 أيام فقط على انتهاء اشتراكك في خدمة الإنترنت! يرجى تجديد الاشتراك لتجنب انقطاع الخدمة."
+                    }
+                }
                 ALERT_24H -> context.getString(R.string.notification_expiring_24h)
                 ALERT_1H -> context.getString(R.string.notification_expiring_1h)
                 else -> context.getString(R.string.notification_expired)
@@ -92,7 +118,7 @@ class ExpirationNotificationWorker(
             }
 
             val displayDate = if (expirationDate.isNotBlank()) {
-                "\n${context.getString(R.string.expiration_date)}: $expirationDate"
+                "\n${context.getString(R.string.expiration_date)}: ${NotificationScheduler.formatFullDateTime(expirationDate)}"
             } else ""
 
             val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -154,6 +180,10 @@ class ExpirationNotificationWorker(
                     type = alertType
                 )
             } catch (_: Exception) {}
+
+            if (!isTest && expirationDate.isNotBlank()) {
+                NotificationScheduler.markAlertNotified(context, alertType, expirationDate)
+            }
         }
     }
 
@@ -173,7 +203,7 @@ class ExpirationNotificationWorker(
         if (!isAlertEnabled) {
             return Result.success()
         }
-        sendNotification(context, alertType, expirationDate)
+        sendNotification(context, alertType, expirationDate, isTest = false)
         return Result.success()
     }
 }

@@ -77,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import com.example.R
+import com.example.analytics.AnalyticsManager
 import com.example.ui.theme.SkylineBlue
 import com.example.ui.theme.SkylineCyan
 import com.example.ui.util.HapticFeedbackHelper
@@ -137,6 +138,7 @@ fun AppLockScreen(
                 negativeButtonText = if (lockState.hasPin) "استخدام رمز PIN" else "إلغاء",
                 onSuccess = {
                     errorMessage = null
+                    AnalyticsManager.logAppUnlocked("biometric")
                     AppLockManager.unlockApp(context)
                     onUnlocked()
                 },
@@ -182,6 +184,7 @@ fun AppLockScreen(
             when (val result = AppLockManager.verifyPin(context, updated)) {
                 is PinVerifyResult.Success -> {
                     enteredPin = ""
+                    AnalyticsManager.logAppUnlocked("pin")
                     onUnlocked()
                 }
                 is PinVerifyResult.WrongPin -> {

@@ -2,6 +2,7 @@ package com.example.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.analytics.AnalyticsManager
 import com.example.data.repository.SkylineRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,29 +82,41 @@ class LoginViewModel(
         }
 
         _uiState.value = state.copy(isLoading = true, showDialog = false)
+        AnalyticsManager.logLoginAttempt("credentials")
 
         viewModelScope.launch {
             val result = repository.login(user, pass)
             result.onSuccess {
+                AnalyticsManager.logLoginSuccess("credentials")
                 _uiState.value = _uiState.value.copy(isLoading = false, showDialog = false)
                 _events.emit(LoginEvent.LoginSuccess)
             }.onFailure { error ->
                 val errorMsg = error.message.orEmpty()
-                val message = when {
-                    errorMsg.contains("error_not_allowed", ignoreCase = true) ->
-                        "خادم المزود رفض تسجيل الدخول من الشبكة الحالية.\n\nيرجى التأكد من اتصالك بشبكة Skyline مباشرةً وليس من شبكة خارجية أو معاينة سحابية، أو مراجعة الوكيل على الرقم: 07821082008"
-                    errorMsg.contains("unknown_user", ignoreCase = true) ->
-                        "لم يتم العثور على الحساب. يرجى التأكد من اسم المستخدم أو الاتصال بشبكة Skyline."
-                    errorMsg.contains("captcha", ignoreCase = true) ->
-                        "يتطلب الخادم رمز تحقق إضافي. يرجى المحاولة لاحقاً أو مراجعة الوكيل."
+                val errorCategory = when {
+                    errorMsg.contains("error_not_allowed", ignoreCase = true) -> "not_allowed"
+                    errorMsg.contains("unknown_user", ignoreCase = true) -> "unknown_user"
+                    errorMsg.contains("captcha", ignoreCase = true) -> "captcha"
                     errorMsg.contains("err_invalid_login", ignoreCase = true) ||
-                    errorMsg.contains("invalid", ignoreCase = true) ||
-                    errorMsg.contains("401") || errorMsg.contains("403") ->
-                        "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من البيانات أو مراجعة الوكيل المعتمد."
-                    errorMsg.startsWith("server_error_", ignoreCase = true) ->
-                        "حدث خطأ مؤقت في الخادم، يرجى المحاولة لاحقاً."
+                        errorMsg.contains("invalid", ignoreCase = true) ||
+                        errorMsg.contains("401") || errorMsg.contains("403") -> "invalid_credentials"
+                    errorMsg.startsWith("server_error_", ignoreCase = true) -> "server_error"
                     errorMsg.contains("network", ignoreCase = true) ||
-                    error is java.net.UnknownHostException || error is java.net.SocketTimeoutException ->
+                        error is java.net.UnknownHostException || error is java.net.SocketTimeoutException -> "network_error"
+                    else -> "unknown"
+                }
+                AnalyticsManager.logLoginFailure("credentials", errorCategory)
+                val message = when (errorCategory) {
+                    "not_allowed" ->
+                        "خادم المزود رفض تسجيل الدخول من الشبكة الحالية.\n\nيرجى التأكد من اتصالك بشبكة Skyline مباشرةً وليس من شبكة خارجية أو معاينة سحابية، أو مراجعة الوكيل على الرقم: 07821082008"
+                    "unknown_user" ->
+                        "لم يتم العثور على الحساب. يرجى التأكد من اسم المستخدم أو الاتصال بشبكة Skyline."
+                    "captcha" ->
+                        "يتطلب الخادم رمز تحقق إضافي. يرجى المحاولة لاحقاً أو مراجعة الوكيل."
+                    "invalid_credentials" ->
+                        "اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التأكد من البيانات أو مراجعة الوكيل المعتمد."
+                    "server_error" ->
+                        "حدث خطأ مؤقت في الخادم، يرجى المحاولة لاحقاً."
+                    "network_error" ->
                         "تعذر الاتصال بخادم Skyline. يرجى التأكد من تشغيل البيانات أو الاتصال بالشبكة."
                     else -> "فشل تسجيل الدخول: ${error.localizedMessage ?: "حدث خطأ غير متوقع، يرجى المحاولة لاحقاً."}"
                 }
@@ -125,15 +138,18 @@ class LoginViewModel(
             "جاري تسجيل الدخول التلقائي..."
         }
 
+        val loginMethod = if (latitude != null && longitude != null) "auto_gps" else "auto_network"
         _uiState.value = _uiState.value.copy(
             isLoading = true,
             loadingMessage = coordMsg,
             showDialog = false
         )
+        AnalyticsManager.logLoginAttempt(loginMethod)
 
         viewModelScope.launch {
             val result = repository.autoLoginWithGps(latitude, longitude)
             result.onSuccess {
+                AnalyticsManager.logLoginSuccess(loginMethod)
                 // Fetch fresh subscription details into session / cache
                 try {
                     repository.fetchSubscriptionData()
@@ -143,10 +159,14 @@ class LoginViewModel(
                 _events.emit(LoginEvent.LoginSuccess)
             }.onFailure { error ->
                 val errorMsg = error.message.orEmpty()
-                val message = if (errorMsg.contains("not_connected_to_provider", ignoreCase = true) ||
+                val isNotConnected = errorMsg.contains("not_connected_to_provider", ignoreCase = true) ||
                     errorMsg.contains("provider_status", ignoreCase = true) ||
                     error is java.net.UnknownHostException || error is java.net.SocketTimeoutException
-                ) {
+                AnalyticsManager.logLoginFailure(
+                    loginMethod,
+                    if (isNotConnected) "not_connected" else "unknown"
+                )
+                val message = if (isNotConnected) {
                     "أنت غير متصل بمزود الخدمة حالياً.\n\nيرجى التأكد من الاتصال بشبكة الإنترنت أو إدخال اسم المستخدم وكلمة المرور للمتابعة."
                 } else {
                     "تعذر الاتصال التلقائي: ${error.localizedMessage ?: "تأكد من الاتصال بالشبكة والمحاولة مجدداً."}"

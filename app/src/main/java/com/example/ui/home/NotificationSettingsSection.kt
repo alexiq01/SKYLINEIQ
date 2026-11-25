@@ -80,6 +80,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.analytics.AnalyticsManager
 import com.example.ui.theme.SkylineBlue
 import com.example.ui.theme.SkylineCyan
 import com.example.ui.theme.SkylineSuccess
@@ -108,6 +109,9 @@ fun ScheduledNotificationsSettingsCard(
     val isWorkEnqueued by remember(context) {
         NotificationScheduler.observePeriodicWorkScheduled(context)
     }.collectAsState(initial = settings.backgroundAlertsEnabled)
+    val isThreeDayWorkScheduled by remember(context) {
+        NotificationScheduler.observeThreeDayAlertWorkScheduled(context)
+    }.collectAsState(initial = false)
 
     var hasOsPermission by remember {
         mutableStateOf(checkSystemNotificationsReady(context))
@@ -328,6 +332,7 @@ fun ScheduledNotificationsSettingsCard(
                             context,
                             settings.copy(backgroundAlertsEnabled = enabled)
                         )
+                        AnalyticsManager.logNotificationSettingChanged("background_alerts", enabled)
                         onShowMessage(
                             if (enabled) {
                                 "تم تفعيل وجدولة إشعارات النظام في الخلفية"
@@ -383,6 +388,7 @@ fun ScheduledNotificationsSettingsCard(
                                 context,
                                 settings.copy(backgroundAlertsEnabled = enabled)
                             )
+                            AnalyticsManager.logNotificationSettingChanged("background_alerts", enabled)
                             onShowMessage(
                                 if (enabled) {
                                     "تم تفعيل وجدولة إشعارات النظام في الخلفية"
@@ -433,6 +439,7 @@ fun ScheduledNotificationsSettingsCard(
                                 context,
                                 settings.copy(alertOnExpirationEnabled = checked)
                             )
+                            AnalyticsManager.logNotificationSettingChanged("alert_on_expiration", checked)
                             onShowMessage(
                                 if (checked) "تم تفعيل تنبيه انتهاء الاشتراك"
                                 else "تم إيقاف تنبيه انتهاء الاشتراك"
@@ -440,11 +447,43 @@ fun ScheduledNotificationsSettingsCard(
                         }
                     )
 
+                    val threeDayTriggerMillis = remember(expirationDateStr) {
+                        NotificationScheduler.getThreeDayTriggerMillis(expirationDateStr)
+                    }
+                    val threeDaySubtitle = remember(
+                        settings.alert3DaysEnabled,
+                        isThreeDayWorkScheduled,
+                        expirationDateStr,
+                        threeDayTriggerMillis
+                    ) {
+                        val now = System.currentTimeMillis()
+                        val alreadySent = NotificationScheduler.wasAlertNotifiedForDate(
+                            context,
+                            ExpirationNotificationWorker.ALERT_3D,
+                            expirationDateStr
+                        )
+                        when {
+                            !settings.alert3DaysEnabled ->
+                                "تذكير مبكر لتجديد الاشتراك قبل انتهائه بـ 72 ساعة"
+                            alreadySent ->
+                                "تم إرسال تنبيه قبل 3 أيام لهذه الدورة بنجاح"
+                            threeDayTriggerMillis != null && threeDayTriggerMillis > now && isThreeDayWorkScheduled -> {
+                                val sdf = java.text.SimpleDateFormat("d MMMM yyyy - hh:mm a", java.util.Locale("ar"))
+                                "مجدول عبر WorkManager ليصل في: ${sdf.format(java.util.Date(threeDayTriggerMillis))}"
+                            }
+                            threeDayTriggerMillis != null && threeDayTriggerMillis <= now &&
+                                NotificationScheduler.isSubscriptionActive(expirationDateStr) ->
+                                "الاشتراك حالياً ضمن مهلة الـ 3 أيام قبل الانتهاء"
+                            else ->
+                                "تذكير مبكر لتجديد الاشتراك قبل انتهائه بـ 72 ساعة"
+                        }
+                    }
+
                     NotificationToggleRow(
                         icon = Icons.Default.AccessTime,
                         iconTint = Color(0xFFF59E0B),
                         title = "تنبيه مسبق قبل 3 أيام",
-                        subtitle = "تذكير مبكر لتجديد الاشتراك قبل انتهائه بـ 72 ساعة",
+                        subtitle = threeDaySubtitle,
                         checked = settings.alert3DaysEnabled,
                         testTag = "switch_alert_3d",
                         onToggle = { checked ->
@@ -453,6 +492,7 @@ fun ScheduledNotificationsSettingsCard(
                                 context,
                                 settings.copy(alert3DaysEnabled = checked)
                             )
+                            AnalyticsManager.logNotificationSettingChanged("alert_3_days", checked)
                             onShowMessage(
                                 if (checked) "تم تفعيل تنبيه قبل 3 أيام"
                                 else "تم إيقاف تنبيه قبل 3 أيام"
@@ -473,6 +513,7 @@ fun ScheduledNotificationsSettingsCard(
                                 context,
                                 settings.copy(alert24HoursEnabled = checked)
                             )
+                            AnalyticsManager.logNotificationSettingChanged("alert_24_hours", checked)
                             onShowMessage(
                                 if (checked) "تم تفعيل تنبيه قبل 24 ساعة"
                                 else "تم إيقاف تنبيه قبل 24 ساعة"
@@ -532,6 +573,7 @@ fun ScheduledNotificationsSettingsCard(
                                                 context,
                                                 settings.copy(checkIntervalHours = hours)
                                             )
+                                            AnalyticsManager.logNotificationIntervalChanged(hours)
                                             onShowMessage("تم تحديث الفحص الدوري إلى $label")
                                         }
                                     }
@@ -571,6 +613,7 @@ fun ScheduledNotificationsSettingsCard(
                         onClick = {
                             HapticFeedbackHelper.performClick(context, haptic)
                             NotificationScheduler.triggerImmediateCheck(context)
+                            AnalyticsManager.logManualBackgroundCheck()
                             onShowMessage("تم تشغيل فحص الخلفية المجدول الآن")
                         },
                         modifier = Modifier
@@ -619,6 +662,7 @@ fun ScheduledNotificationsSettingsCard(
                         alertType = ExpirationNotificationWorker.ALERT_3D,
                         expirationDateStr = expirationDateStr
                     )
+                    AnalyticsManager.logTestNotificationTriggered("3_days")
                     onShowMessage("تم إرسال إشعار (متبقي 3 أيام) إلى شريط الإشعارات")
                 },
                 modifier = Modifier
@@ -648,6 +692,7 @@ fun ScheduledNotificationsSettingsCard(
                         alertType = ExpirationNotificationWorker.ALERT_EXPIRED,
                         expirationDateStr = expirationDateStr
                     )
+                    AnalyticsManager.logTestNotificationTriggered("expired")
                     onShowMessage("تم إرسال إشعار (انتهاء الاشتراك) إلى شريط الإشعارات")
                 },
                 modifier = Modifier
@@ -677,6 +722,7 @@ fun ScheduledNotificationsSettingsCard(
                         planName = planName,
                         newExpirationDate = expirationDateStr
                     )
+                    AnalyticsManager.logTestNotificationTriggered("renewed")
                     onShowMessage("تم إرسال إشعار (تم التفعيل بنجاح! استمتع بجودة الإنترنت)")
                 },
                 modifier = Modifier

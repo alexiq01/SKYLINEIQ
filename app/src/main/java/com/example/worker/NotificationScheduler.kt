@@ -40,16 +40,20 @@ data class NotificationSettings(
 object NotificationScheduler {
 
     const val PERIODIC_CHECK_WORK_NAME = "skyline_periodic_subscription_check"
-    private const val WORK_EXP_3D = "skyline_exp_3d"
+    const val WORK_EXP_3D = "skyline_exp_3d"
     private const val WORK_EXP_24H = "skyline_exp_24h"
     private const val WORK_EXP_1H = "skyline_exp_1h"
     private const val WORK_EXP_EXPIRED = "skyline_exp_expired"
 
     private const val PREFS_NAME = "skyline_notification_prefs"
     private const val KEY_LAST_3D_NOTIFIED_DATE = "last_notified_3d_exp_date"
+    private const val KEY_LAST_24H_NOTIFIED_DATE = "last_notified_24h_exp_date"
+    private const val KEY_LAST_1H_NOTIFIED_DATE = "last_notified_1h_exp_date"
     private const val KEY_LAST_EXPIRED_NOTIFIED_DATE = "last_notified_expired_exp_date"
+    private const val KEY_LAST_RENEWED_EXP_DATE = "last_notified_renewed_exp_date"
     private const val KEY_LAST_KNOWN_EXP_MILLIS = "last_known_exp_millis"
     private const val KEY_LAST_KNOWN_WAS_EXPIRED = "last_known_was_expired"
+    private const val KEY_LAST_SCHEDULED_EXP_DATE = "last_scheduled_exp_date"
 
     private const val KEY_BG_ALERTS_ENABLED = "bg_alerts_enabled"
     private const val KEY_ALERT_EXPIRED_ENABLED = "alert_expired_enabled"
@@ -102,6 +106,7 @@ object NotificationScheduler {
             .putBoolean(KEY_ALERT_3D_ENABLED, sanitized.alert3DaysEnabled)
             .putBoolean(KEY_ALERT_24H_ENABLED, sanitized.alert24HoursEnabled)
             .putLong(KEY_CHECK_INTERVAL_HOURS, sanitized.checkIntervalHours)
+            .remove(KEY_LAST_SCHEDULED_EXP_DATE)
             .apply()
 
         _settingsFlow.value = sanitized
@@ -116,11 +121,16 @@ object NotificationScheduler {
     }
 
     fun cancelExpirationOneTimeWorks(context: Context) {
-        val workManager = WorkManager.getInstance(context.applicationContext)
+        val appContext = context.applicationContext
+        val workManager = WorkManager.getInstance(appContext)
         workManager.cancelUniqueWork(WORK_EXP_3D)
         workManager.cancelUniqueWork(WORK_EXP_24H)
         workManager.cancelUniqueWork(WORK_EXP_1H)
         workManager.cancelUniqueWork(WORK_EXP_EXPIRED)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_LAST_SCHEDULED_EXP_DATE)
+            .apply()
     }
 
     fun cancelAllScheduledAlerts(context: Context) {
@@ -138,6 +148,22 @@ object NotificationScheduler {
                 }
             }
             .catch { emit(false) }
+    }
+
+    fun observeThreeDayAlertWorkScheduled(context: Context): Flow<Boolean> {
+        return WorkManager.getInstance(context.applicationContext)
+            .getWorkInfosForUniqueWorkFlow(WORK_EXP_3D)
+            .map { workInfos ->
+                workInfos.any { info ->
+                    info.state == WorkInfo.State.ENQUEUED || info.state == WorkInfo.State.RUNNING
+                }
+            }
+            .catch { emit(false) }
+    }
+
+    fun getThreeDayTriggerMillis(expirationDateStr: String?): Long? {
+        val expMillis = parseDateToMillis(expirationDateStr) ?: return null
+        return expMillis - TimeUnit.DAYS.toMillis(3)
     }
 
     private val patternList = listOf(
@@ -163,9 +189,10 @@ object NotificationScheduler {
      * - Exact expiration time
      */
     fun scheduleSubscriptionAlerts(context: Context, expirationDateStr: String?) {
-        val settings = getNotificationSettings(context)
+        val appContext = context.applicationContext
+        val settings = getNotificationSettings(appContext)
         if (!settings.backgroundAlertsEnabled) {
-            cancelExpirationOneTimeWorks(context)
+            cancelExpirationOneTimeWorks(appContext)
             return
         }
         if (expirationDateStr.isNullOrBlank()) return
@@ -173,12 +200,21 @@ object NotificationScheduler {
         val expirationMillis = parseDateToMillis(expirationDateStr) ?: return
         val now = System.currentTimeMillis()
 
-        val workManager = WorkManager.getInstance(context.applicationContext)
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lastScheduledDate = prefs.getString(KEY_LAST_SCHEDULED_EXP_DATE, null)
+        val existingWorkPolicy = if (lastScheduledDate == expirationDateStr) {
+            ExistingWorkPolicy.KEEP
+        } else {
+            ExistingWorkPolicy.REPLACE
+        }
+
+        val workManager = WorkManager.getInstance(appContext)
 
         // 1. 3 Days (72 Hours) Alert
         val target3d = expirationMillis - TimeUnit.DAYS.toMillis(3)
         val delay3d = target3d - now
-        if (settings.alert3DaysEnabled && delay3d > 0) {
+        val alreadyNotified3d = wasAlertNotifiedForDate(appContext, ExpirationNotificationWorker.ALERT_3D, expirationDateStr)
+        if (settings.alert3DaysEnabled && !alreadyNotified3d && delay3d > 0) {
             val data = Data.Builder()
                 .putString(ExpirationNotificationWorker.KEY_ALERT_TYPE, ExpirationNotificationWorker.ALERT_3D)
                 .putString(ExpirationNotificationWorker.KEY_EXPIRATION_DATE, expirationDateStr)
@@ -187,13 +223,14 @@ object NotificationScheduler {
             val work = OneTimeWorkRequestBuilder<ExpirationNotificationWorker>()
                 .setInitialDelay(delay3d, TimeUnit.MILLISECONDS)
                 .setInputData(data)
+                .addTag(WORK_EXP_3D)
                 .build()
 
-            workManager.enqueueUniqueWork(WORK_EXP_3D, ExistingWorkPolicy.REPLACE, work)
+            workManager.enqueueUniqueWork(WORK_EXP_3D, existingWorkPolicy, work)
         } else {
             val diff = expirationMillis - now
-            if (settings.alert3DaysEnabled && diff > 0 && diff <= TimeUnit.DAYS.toMillis(3)) {
-                checkAndTrigger3DayAlertIfNeeded(context, expirationDateStr, expirationMillis)
+            if (settings.alert3DaysEnabled && !alreadyNotified3d && diff > 0 && diff <= TimeUnit.DAYS.toMillis(3)) {
+                checkAndTrigger3DayAlertIfNeeded(appContext, expirationDateStr, expirationMillis)
             }
             workManager.cancelUniqueWork(WORK_EXP_3D)
         }
@@ -201,7 +238,8 @@ object NotificationScheduler {
         // 2. 24 Hours Alert
         val target24h = expirationMillis - TimeUnit.HOURS.toMillis(24)
         val delay24h = target24h - now
-        if (settings.alert24HoursEnabled && delay24h > 0) {
+        val alreadyNotified24h = wasAlertNotifiedForDate(appContext, ExpirationNotificationWorker.ALERT_24H, expirationDateStr)
+        if (settings.alert24HoursEnabled && !alreadyNotified24h && delay24h > 0) {
             val data = Data.Builder()
                 .putString(ExpirationNotificationWorker.KEY_ALERT_TYPE, ExpirationNotificationWorker.ALERT_24H)
                 .putString(ExpirationNotificationWorker.KEY_EXPIRATION_DATE, expirationDateStr)
@@ -210,9 +248,10 @@ object NotificationScheduler {
             val work = OneTimeWorkRequestBuilder<ExpirationNotificationWorker>()
                 .setInitialDelay(delay24h, TimeUnit.MILLISECONDS)
                 .setInputData(data)
+                .addTag(WORK_EXP_24H)
                 .build()
 
-            workManager.enqueueUniqueWork(WORK_EXP_24H, ExistingWorkPolicy.REPLACE, work)
+            workManager.enqueueUniqueWork(WORK_EXP_24H, existingWorkPolicy, work)
         } else {
             workManager.cancelUniqueWork(WORK_EXP_24H)
         }
@@ -220,7 +259,8 @@ object NotificationScheduler {
         // 3. 1 Hour Alert
         val target1h = expirationMillis - TimeUnit.HOURS.toMillis(1)
         val delay1h = target1h - now
-        if (settings.alertOnExpirationEnabled && delay1h > 0) {
+        val alreadyNotified1h = wasAlertNotifiedForDate(appContext, ExpirationNotificationWorker.ALERT_1H, expirationDateStr)
+        if (settings.alertOnExpirationEnabled && !alreadyNotified1h && delay1h > 0) {
             val data = Data.Builder()
                 .putString(ExpirationNotificationWorker.KEY_ALERT_TYPE, ExpirationNotificationWorker.ALERT_1H)
                 .putString(ExpirationNotificationWorker.KEY_EXPIRATION_DATE, expirationDateStr)
@@ -229,16 +269,18 @@ object NotificationScheduler {
             val work = OneTimeWorkRequestBuilder<ExpirationNotificationWorker>()
                 .setInitialDelay(delay1h, TimeUnit.MILLISECONDS)
                 .setInputData(data)
+                .addTag(WORK_EXP_1H)
                 .build()
 
-            workManager.enqueueUniqueWork(WORK_EXP_1H, ExistingWorkPolicy.REPLACE, work)
+            workManager.enqueueUniqueWork(WORK_EXP_1H, existingWorkPolicy, work)
         } else {
             workManager.cancelUniqueWork(WORK_EXP_1H)
         }
 
         // 4. Exact Expiration Alert
         val delayExpired = expirationMillis - now
-        if (settings.alertOnExpirationEnabled && delayExpired > 0) {
+        val alreadyNotifiedExpired = wasAlertNotifiedForDate(appContext, ExpirationNotificationWorker.ALERT_EXPIRED, expirationDateStr)
+        if (settings.alertOnExpirationEnabled && !alreadyNotifiedExpired && delayExpired > 0) {
             val data = Data.Builder()
                 .putString(ExpirationNotificationWorker.KEY_ALERT_TYPE, ExpirationNotificationWorker.ALERT_EXPIRED)
                 .putString(ExpirationNotificationWorker.KEY_EXPIRATION_DATE, expirationDateStr)
@@ -247,12 +289,15 @@ object NotificationScheduler {
             val work = OneTimeWorkRequestBuilder<ExpirationNotificationWorker>()
                 .setInitialDelay(delayExpired, TimeUnit.MILLISECONDS)
                 .setInputData(data)
+                .addTag(WORK_EXP_EXPIRED)
                 .build()
 
-            workManager.enqueueUniqueWork(WORK_EXP_EXPIRED, ExistingWorkPolicy.REPLACE, work)
+            workManager.enqueueUniqueWork(WORK_EXP_EXPIRED, existingWorkPolicy, work)
         } else {
             workManager.cancelUniqueWork(WORK_EXP_EXPIRED)
         }
+
+        prefs.edit().putString(KEY_LAST_SCHEDULED_EXP_DATE, expirationDateStr).apply()
     }
 
     data class ExpirationAlertState(
@@ -319,6 +364,30 @@ object NotificationScheduler {
         }
     }
 
+    private fun notifiedKeyForAlertType(alertType: String): String? {
+        return when (alertType) {
+            ExpirationNotificationWorker.ALERT_3D -> KEY_LAST_3D_NOTIFIED_DATE
+            ExpirationNotificationWorker.ALERT_24H -> KEY_LAST_24H_NOTIFIED_DATE
+            ExpirationNotificationWorker.ALERT_1H -> KEY_LAST_1H_NOTIFIED_DATE
+            ExpirationNotificationWorker.ALERT_EXPIRED -> KEY_LAST_EXPIRED_NOTIFIED_DATE
+            else -> null
+        }
+    }
+
+    fun wasAlertNotifiedForDate(context: Context, alertType: String, expirationDateStr: String): Boolean {
+        if (expirationDateStr.isBlank()) return false
+        val key = notifiedKeyForAlertType(alertType) ?: return false
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(key, null) == expirationDateStr
+    }
+
+    fun markAlertNotified(context: Context, alertType: String, expirationDateStr: String) {
+        if (expirationDateStr.isBlank()) return
+        val key = notifiedKeyForAlertType(alertType) ?: return
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(key, expirationDateStr).apply()
+    }
+
     /**
      * Checks if a 3-day expiration alert has already been sent for this expiration date.
      * If not, triggers the local push notification and records that it was sent.
@@ -332,16 +401,13 @@ object NotificationScheduler {
         if (!settings.backgroundAlertsEnabled || !settings.alert3DaysEnabled) return
 
         NotificationInboxManager.init(context)
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val lastNotifiedDate = prefs.getString(KEY_LAST_3D_NOTIFIED_DATE, null)
-
-        if (lastNotifiedDate != expirationDateStr) {
+        if (!wasAlertNotifiedForDate(context, ExpirationNotificationWorker.ALERT_3D, expirationDateStr)) {
             ExpirationNotificationWorker.sendNotification(
                 context = context,
                 alertType = ExpirationNotificationWorker.ALERT_3D,
-                expirationDate = expirationDateStr
+                expirationDate = expirationDateStr,
+                isTest = false
             )
-            prefs.edit().putString(KEY_LAST_3D_NOTIFIED_DATE, expirationDateStr).apply()
         }
     }
 
@@ -357,16 +423,13 @@ object NotificationScheduler {
         if (!settings.backgroundAlertsEnabled || !settings.alertOnExpirationEnabled) return
 
         NotificationInboxManager.init(context)
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val lastNotifiedDate = prefs.getString(KEY_LAST_EXPIRED_NOTIFIED_DATE, null)
-
-        if (lastNotifiedDate != expirationDateStr) {
+        if (!wasAlertNotifiedForDate(context, ExpirationNotificationWorker.ALERT_EXPIRED, expirationDateStr)) {
             ExpirationNotificationWorker.sendNotification(
                 context = context,
                 alertType = ExpirationNotificationWorker.ALERT_EXPIRED,
-                expirationDate = expirationDateStr
+                expirationDate = expirationDateStr,
+                isTest = false
             )
-            prefs.edit().putString(KEY_LAST_EXPIRED_NOTIFIED_DATE, expirationDateStr).apply()
         }
     }
 
@@ -424,10 +487,14 @@ object NotificationScheduler {
     }
 
     fun triggerImmediateCheck(context: Context) {
-        val workManager = WorkManager.getInstance(context)
+        val workManager = WorkManager.getInstance(context.applicationContext)
         val oneTimeWork = OneTimeWorkRequestBuilder<SubscriptionCheckWorker>()
             .build()
-        workManager.enqueue(oneTimeWork)
+        workManager.enqueueUniqueWork(
+            "skyline_immediate_subscription_check",
+            ExistingWorkPolicy.KEEP,
+            oneTimeWork
+        )
     }
 
     /**
@@ -441,7 +508,7 @@ object NotificationScheduler {
         val displayDate = expirationDateStr ?: SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(
             Date(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(3))
         )
-        ExpirationNotificationWorker.sendNotification(context, alertType, displayDate)
+        ExpirationNotificationWorker.sendNotification(context, alertType, displayDate, isTest = true)
     }
 
     /**
@@ -451,12 +518,21 @@ object NotificationScheduler {
     fun sendSubscriptionRenewedNotification(
         context: Context,
         planName: String? = null,
-        newExpirationDate: String? = null
+        newExpirationDate: String? = null,
+        dedupExpirationKey: String? = null
     ) {
         try {
-            NotificationInboxManager.init(context)
-            NotificationInboxManager.createNotificationChannel(context)
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            val appContext = context.applicationContext
+            val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!dedupExpirationKey.isNullOrBlank()) {
+                val lastRenewedExp = prefs.getString(KEY_LAST_RENEWED_EXP_DATE, null)
+                if (lastRenewedExp == dedupExpirationKey) {
+                    return
+                }
+            }
+            NotificationInboxManager.init(appContext)
+            NotificationInboxManager.createNotificationChannel(appContext)
+            val notificationManager = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
                 ?: return
 
             val intent = Intent(context, MainActivity::class.java).apply {
@@ -506,9 +582,13 @@ object NotificationScheduler {
 
             notificationManager.notify(2001, builder.build())
 
+            if (!dedupExpirationKey.isNullOrBlank()) {
+                prefs.edit().putString(KEY_LAST_RENEWED_EXP_DATE, dedupExpirationKey).apply()
+            }
+
             // Record in Notification Inbox
             NotificationInboxManager.addNotification(
-                context = context,
+                context = appContext,
                 title = title,
                 message = fullBody,
                 type = "renewed"
@@ -541,7 +621,8 @@ object NotificationScheduler {
                 sendSubscriptionRenewedNotification(
                     context = context,
                     planName = planName,
-                    newExpirationDate = newExpirationStr
+                    newExpirationDate = newExpirationStr,
+                    dedupExpirationKey = newExpirationStr
                 )
             }
             prefs.edit()

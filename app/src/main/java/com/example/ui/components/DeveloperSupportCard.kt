@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.analytics.AnalyticsManager
 import com.example.ui.theme.SkylineBlue
 import com.example.ui.theme.SkylineCyan
 import com.example.ui.theme.SkylineSuccess
@@ -119,6 +121,7 @@ fun DeveloperSupportCard(
 
         HapticFeedbackHelper.performCopySuccess(context, haptic)
         isNumberCopied = true
+        AnalyticsManager.logSupportAction("copy_super_qi")
         onCopied("تم نسخ رقم ماستر كارد (4659615480) بنجاح")
 
         scope.launch {
@@ -201,7 +204,10 @@ fun DeveloperSupportCard(
             ) {
                 // Instagram Button
                 OutlinedButton(
-                    onClick = { openUrl(DEVELOPER_INSTAGRAM_URL) },
+                    onClick = {
+                        AnalyticsManager.logSupportAction("developer_instagram")
+                        openUrl(DEVELOPER_INSTAGRAM_URL)
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
@@ -231,7 +237,10 @@ fun DeveloperSupportCard(
 
                 // WhatsApp Button
                 OutlinedButton(
-                    onClick = { openUrl(DEVELOPER_WHATSAPP_URL) },
+                    onClick = {
+                        AnalyticsManager.logSupportAction("developer_whatsapp")
+                        openUrl(DEVELOPER_WHATSAPP_URL)
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
@@ -355,7 +364,7 @@ fun DeveloperSupportCard(
                                     containerColor = if (isNumberCopied) SkylineSuccess else Color(0xFFD97706)
                                 ),
                                 shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.height(38.dp)
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                             ) {
                                 Icon(
                                     imageVector = if (isNumberCopied) Icons.Default.Check else Icons.Default.ContentCopy,
@@ -710,23 +719,23 @@ fun DeveloperScreen(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { copyText("رابط الإنستغرام", DEVELOPER_INSTAGRAM_URL) },
-                                modifier = Modifier.size(38.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "نسخ الرابط",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                             Button(
                                 onClick = { openUrl(DEVELOPER_INSTAGRAM_URL) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE1306C)),
-                                modifier = Modifier.height(38.dp)
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.OpenInNew,
@@ -790,23 +799,23 @@ fun DeveloperScreen(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { copyText("رقم الواتساب", DEVELOPER_WHATSAPP_NUMBER) },
-                                modifier = Modifier.size(38.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "نسخ الرقم",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                             Button(
                                 onClick = { openUrl(DEVELOPER_WHATSAPP_URL) },
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF128C7E)),
-                                modifier = Modifier.height(38.dp)
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                             ) {
                                 Icon(
                                     painter = painterResource(R.drawable.ic_whatsapp),
@@ -847,11 +856,13 @@ fun SkylineOfficesCard(onCopied: (String) -> Unit, modifier: Modifier = Modifier
         val clip = ClipData.newPlainText(label, number)
         clipboard?.setPrimaryClip(clip)
         HapticFeedbackHelper.performCopySuccess(context, haptic)
+        AnalyticsManager.logSupportAction("copy_office_number")
         onCopied("تم نسخ رقم $label بنجاح")
     }
 
     fun callNumber(number: String) {
         HapticFeedbackHelper.performClick(context, haptic)
+        AnalyticsManager.logSupportAction("office_call")
         try {
             val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -938,24 +949,24 @@ fun SkylineOfficesCard(onCopied: (String) -> Unit, modifier: Modifier = Modifier
                             )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { copyNumber(office.first, office.second) },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "نسخ الرقم",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                             Button(
                                 onClick = { callNumber(office.second) },
                                 shape = RoundedCornerShape(10.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = SkylineBlue),
-                                modifier = Modifier.height(36.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+                                modifier = Modifier.defaultMinSize(minHeight = 48.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Phone,

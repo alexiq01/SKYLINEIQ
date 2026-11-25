@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import com.example.analytics.AnalyticsManager
 import com.example.data.storage.SessionManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,6 +67,9 @@ object AppLockManager {
     @Volatile
     private var biometricPromptActive: Boolean = false
 
+    @Volatile
+    private var hasEvaluatedLaunchLock: Boolean = false
+
     fun init(context: Context) {
         if (!initialized) {
             synchronized(this) {
@@ -81,6 +85,8 @@ object AppLockManager {
 
     fun onAppLaunched(context: Context) {
         init(context)
+        if (hasEvaluatedLaunchLock) return
+        hasEvaluatedLaunchLock = true
         val appContext = context.applicationContext
         val current = _lockStateFlow.value
         val hasValidSession = SessionManager(appContext).hasValidSession()
@@ -168,6 +174,10 @@ object AppLockManager {
             .apply()
 
         _lockStateFlow.value = readStateFromPrefs(p, currentlyLocked = false)
+        AnalyticsManager.logAppLockToggled(true)
+        if (enableBiometric != null) {
+            AnalyticsManager.logBiometricToggled(enableBiometric)
+        }
     }
 
     fun verifyPin(context: Context, inputPin: String): PinVerifyResult {
@@ -224,6 +234,7 @@ object AppLockManager {
             p,
             currentlyLocked = if (enabled) _lockStateFlow.value.isLocked else false
         )
+        AnalyticsManager.logAppLockToggled(enabled)
     }
 
     fun setBiometricEnabled(context: Context, enabled: Boolean) {
@@ -233,6 +244,7 @@ object AppLockManager {
             .putBoolean(KEY_BIOMETRIC_ENABLED, enabled)
             .apply()
         _lockStateFlow.value = readStateFromPrefs(p, currentlyLocked = _lockStateFlow.value.isLocked)
+        AnalyticsManager.logBiometricToggled(enabled)
     }
 
     fun setLockTimeoutSeconds(context: Context, seconds: Long) {
@@ -260,6 +272,7 @@ object AppLockManager {
             .putLong(KEY_LOCKOUT_UNTIL, 0L)
             .apply()
         lastBackgroundTimestamp = 0L
+        hasEvaluatedLaunchLock = false
         _lockStateFlow.value = AppLockState()
     }
 

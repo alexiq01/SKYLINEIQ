@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import com.example.analytics.AnalyticsManager
 import com.example.notifications.NotificationInboxManager
 import com.example.update.UpdateManager
 import com.google.firebase.FirebaseApp
@@ -13,6 +14,7 @@ class SkylineApplication : Application() {
         try {
             FirebaseApp.initializeApp(this)
         } catch (_: Throwable) {}
+        AnalyticsManager.init(this)
         
         // Initialize Notification Channels & Inbox
         NotificationInboxManager.init(this)

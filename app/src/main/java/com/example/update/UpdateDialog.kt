@@ -60,6 +60,8 @@ import com.example.ui.theme.SkylineCyan
 import com.example.ui.theme.isAppInDarkTheme
 import com.example.ui.util.HapticFeedbackHelper
 
+import com.example.analytics.AnalyticsManager
+
 /**
  * Top-level container observing UpdateManager state and displaying
  * the update dialog seamlessly when a new version is detected.
@@ -77,9 +79,11 @@ fun InAppUpdateDialogHost() {
             UpdateDialog(
                 updateInfo = info,
                 onUpdateClick = {
+                    AnalyticsManager.logInAppUpdateAction("update_now")
                     UpdateManager.openUpdateUrl(it, info.updateUrl)
                 },
                 onDismiss = {
+                    AnalyticsManager.logInAppUpdateAction("dismiss_later")
                     UpdateManager.dismissUpdate()
                 }
             )

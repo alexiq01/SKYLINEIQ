@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -42,7 +41,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.analytics.AnalyticsManager
 import com.example.data.repository.SkylineRepository
+import com.example.data.storage.SessionManager
 import com.example.security.AppLockManager
 import com.example.security.AppLockScreen
 import com.example.security.AppSecurityEngine
@@ -55,22 +56,15 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.update.InAppUpdateDialogHost
 import com.example.update.UpdateManager
 import com.example.worker.NotificationScheduler
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
 
 class MainActivity : FragmentActivity() {
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
         AppSecurityEngine.initializeSilently(this)
         AppLockManager.init(applicationContext)
-        if (savedInstanceState == null) {
-            AppLockManager.onAppLaunched(applicationContext)
-        }
+        AppLockManager.onAppLaunched(applicationContext)
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
@@ -86,6 +80,19 @@ class MainActivity : FragmentActivity() {
 
         com.example.notifications.NotificationInboxManager.init(applicationContext)
         com.example.ui.theme.ThemeController.init(this)
+        AnalyticsManager.init(applicationContext)
+        if (savedInstanceState == null) {
+            val hasSession = try {
+                SessionManager(applicationContext).hasValidSession()
+            } catch (_: Throwable) {
+                false
+            }
+            AnalyticsManager.logAppLaunch(
+                hasSession = hasSession,
+                isDarkMode = com.example.ui.theme.ThemeController.isDarkModeOverride == true,
+                isAppLockEnabled = AppLockManager.lockStateFlow.value.isEnabled
+            )
+        }
         enableEdgeToEdge()
 
         // Schedule periodic WorkManager task to monitor subscription expiration dates
@@ -149,6 +156,17 @@ fun AppNavigation() {
     val lockState by AppLockManager.lockStateFlow.collectAsState()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    LaunchedEffect(currentRoute, lockState.isLocked) {
+        when {
+            lockState.isLocked && currentRoute == "home" ->
+                AnalyticsManager.logScreenView("app_lock", "AppLockScreen")
+            currentRoute == "splash" ->
+                AnalyticsManager.logScreenView("splash", "SplashScreen")
+            currentRoute == "login" ->
+                AnalyticsManager.logScreenView("login", "LoginScreen")
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         NavHost(
@@ -229,6 +247,7 @@ fun AppNavigation() {
                         }
                     },
                     onLogout = {
+                        AppLockManager.unlockApp(context)
                         navController.navigate("login") {
                             popUpTo("home") { inclusive = true }
                         }
