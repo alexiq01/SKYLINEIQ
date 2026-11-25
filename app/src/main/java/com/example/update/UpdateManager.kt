@@ -60,6 +60,9 @@ object UpdateManager {
 
     private var isInitialized = false
 
+    @Volatile
+    private var hasActiveFirestoreConfig = false
+
     /**
      * Initializes Firebase Remote Config with default fallback parameters and settings.
      */
@@ -84,12 +87,39 @@ object UpdateManager {
                 KEY_UPDATE_URL to "",
                 KEY_FORCE_UPDATE to "false",
                 KEY_UPDATE_TITLE to "تحديث جديد متوفر",
-                KEY_UPDATE_MESSAGE to "يتوفر إصدار جديد من تطبيق سكايلان.",
+                KEY_UPDATE_MESSAGE to "يتوفر إصدار جديد من تطبيق Skyline Users.",
                 KEY_RELEASE_NOTES to "تحسينات وإصلاحات جديدة."
             )
             remoteConfig.setDefaultsAsync(defaults)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize Remote Config: ${e.message}")
+        }
+    }
+
+    /**
+     * Applies update metadata controlled live by the Admin Dashboard in Firestore (`app_config/main`).
+     */
+    fun applyFirestoreUpdateConfig(
+        config: com.example.admin.AppConfig,
+        currentVersionCode: Long = BuildConfig.VERSION_CODE.toLong(),
+        currentVersionName: String = BuildConfig.VERSION_NAME
+    ) {
+        hasActiveFirestoreConfig = true
+        val url = config.updateUrl.trim()
+        if (config.latestVersionCode > currentVersionCode && url.isNotBlank()) {
+            _updateState.value = AppUpdateInfo(
+                latestVersionCode = config.latestVersionCode,
+                latestVersionName = config.latestVersionName.ifBlank { config.latestVersionCode.toString() },
+                updateUrl = url,
+                isForceUpdate = config.forceUpdate,
+                currentVersionCode = currentVersionCode,
+                currentVersionName = currentVersionName,
+                title = config.updateTitle.ifBlank { "تحديث جديد متوفر" },
+                message = config.updateMessage.ifBlank { "يتوفر إصدار جديد من تطبيق ${config.appDisplayName}." },
+                releaseNotes = config.releaseNotes
+            )
+        } else {
+            _updateState.value = null
         }
     }
 
@@ -106,6 +136,12 @@ object UpdateManager {
     ) {
         initialize(context)
 
+        val currentFirestoreUpdate = _updateState.value
+        if (hasActiveFirestoreConfig && currentFirestoreUpdate != null) {
+            onUpdateFound?.invoke(currentFirestoreUpdate)
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             _isChecking.value = true
             try {
@@ -121,6 +157,15 @@ object UpdateManager {
 
                 // 1. Fetch & activate latest values from Firebase Remote Config
                 remoteConfig.fetchAndActivate().await()
+
+                // Do not let Remote Config overwrite an active Firestore Admin config
+                if (hasActiveFirestoreConfig) {
+                    val active = _updateState.value
+                    launch(Dispatchers.Main) {
+                        if (active != null) onUpdateFound?.invoke(active) else onNoUpdate?.invoke()
+                    }
+                    return@launch
+                }
 
                 // 2. Read values (handles both String and Number types in Remote Config)
                 val rawVersionCodeStr = remoteConfig.getString(KEY_LATEST_VERSION_CODE).trim()
@@ -186,6 +231,12 @@ object UpdateManager {
         if (current != null && !current.isForceUpdate) {
             _updateState.value = null
         }
+    }
+
+    internal fun resetForTesting() {
+        hasActiveFirestoreConfig = false
+        _updateState.value = null
+        _isChecking.value = false
     }
 
     /**

@@ -1,6 +1,8 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.example.crypto.OpenSslCrypto
 import com.example.data.api.ApiClient
 import com.example.data.api.EncryptedPayloadRequest
@@ -15,8 +17,17 @@ import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Request
 import java.util.UUID
+
+enum class AutoLoginCheckStatus {
+    IDLE,
+    CHECKING,
+    SUCCESS_PROVIDER,
+    NOT_ON_PROVIDER_NETWORK,
+    NETWORK_UNAVAILABLE
+}
 
 class SkylineRepository(
     val context: Context,
@@ -84,14 +95,91 @@ class SkylineRepository(
         }
     }
 
+    private fun hasActiveNetworkConnection(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return true
+            val activeNetwork = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            true
+        }
+    }
+
     /**
-     * Sends a background request to the ISP provider gateway at admin.skylineiq.com/user
-     * using GPS coordinates & Wi-Fi / carrier network detection.
-     * When connected to the provider network or when credentials are saved, it retrieves
-     * subscriber information and logs the user into their dashboard.
+     * Strict launch-only automatic login when the device is connected directly to the Skyline ISP network.
+     * Verifies authentic SAS4 `auth/autoLogin` token response and never fabricates dummy sessions on external networks.
+     */
+    suspend fun attemptLaunchProviderAutoLogin(timeoutMillis: Long = 4500L): AutoLoginCheckStatus =
+        withContext(Dispatchers.IO) {
+            if (sessionManager.hasValidSession()) {
+                return@withContext AutoLoginCheckStatus.SUCCESS_PROVIDER
+            }
+
+            val resultStatus = withTimeoutOrNull(timeoutMillis) {
+                try {
+                    val autoRes = apiService.autoLogin()
+                    val autoBody = autoRes.body()
+                    val autoToken = autoBody?.token
+                    if (autoRes.isSuccessful &&
+                        !autoToken.isNullOrBlank() &&
+                        (autoBody.status == 200 || autoBody.status == 1 || autoBody.status == null)
+                    ) {
+                        val resolvedUsername = try {
+                            val userRes = apiService.getUser("Bearer $autoToken")
+                            userRes.body()?.data?.username?.takeIf { it.isNotBlank() }
+                        } catch (_: Exception) {
+                            null
+                        } ?: sessionManager.getUsername()?.takeIf { it.isNotBlank() }
+                        ?: "مشترك سكايلان"
+
+                        sessionManager.saveSession(
+                            token = autoToken,
+                            username = resolvedUsername
+                        )
+                        AutoLoginCheckStatus.SUCCESS_PROVIDER
+                    } else {
+                        AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK
+                    }
+                } catch (_: Exception) {
+                    if (hasActiveNetworkConnection()) {
+                        AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK
+                    } else {
+                        AutoLoginCheckStatus.NETWORK_UNAVAILABLE
+                    }
+                }
+            }
+
+            resultStatus ?: if (hasActiveNetworkConnection()) {
+                AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK
+            } else {
+                AutoLoginCheckStatus.NETWORK_UNAVAILABLE
+            }
+        }
+
+    /**
+     * Attempts direct ISP provider authentication (SAS4 IP-based `auth/autoLogin` or saved credentials).
+     * Never creates dummy/unauthenticated tokens when connected to an external network.
      */
     suspend fun autoLoginWithGps(latitude: Double? = null, longitude: Double? = null): Result<String> = withContext(Dispatchers.IO) {
-        // 1. If user already has stored credentials, attempt direct login with saved credentials
+        // 1. Check direct ISP provider IP-based SAS4 autoLogin first
+        try {
+            val autoRes = apiService.autoLogin()
+            val autoBody = autoRes.body()
+            val autoToken = autoBody?.token
+            if (autoRes.isSuccessful &&
+                !autoToken.isNullOrBlank() &&
+                (autoBody.status == 200 || autoBody.status == 1 || autoBody.status == null)
+            ) {
+                val resolvedUsername = sessionManager.getUsername()?.takeIf { it.isNotBlank() } ?: "مشترك سكايلان"
+                sessionManager.saveSession(token = autoToken, username = resolvedUsername)
+                return@withContext Result.success(autoToken)
+            }
+        } catch (_: Exception) {
+        }
+
+        // 2. If user already has stored credentials, attempt direct login
         val savedUser = sessionManager.getUsername()
         val savedPass = sessionManager.getPassword()
         if (!savedUser.isNullOrBlank() && !savedPass.isNullOrBlank()) {
@@ -101,7 +189,7 @@ class SkylineRepository(
             }
         }
 
-        // 2. Perform request with GPS telemetry to provider gateway: http://admin.skylineiq.com/user
+        // 3. Check strict JSON token response from provider gateway if reachable
         try {
             val urlBuilder = StringBuilder("http://admin.skylineiq.com/user")
             if (latitude != null && longitude != null) {
@@ -111,7 +199,7 @@ class SkylineRepository(
             val requestBuilder = Request.Builder()
                 .url(urlBuilder.toString())
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile; SkylineApp)")
-                .header("Accept", "application/json, text/html, */*")
+                .header("Accept", "application/json")
 
             if (latitude != null && longitude != null) {
                 requestBuilder.header("X-Location", "geo:$latitude,$longitude")
@@ -120,79 +208,26 @@ class SkylineRepository(
 
             val response = ApiClient.okHttpClient.newCall(requestBuilder.build()).execute()
             if (response.isSuccessful) {
-                val responseBodyStr = response.body?.string().orEmpty()
-
-                // Check if response is JSON with token or user data
-                if (responseBodyStr.trim().startsWith("{")) {
-                    try {
-                        val json = ApiClient.gson.fromJson(responseBodyStr, JsonObject::class.java)
-                        val token = if (json.has("token")) json.get("token").asString else null
-                        val status = if (json.has("status")) json.get("status").asInt else 200
-                        val username = if (json.has("username")) json.get("username").asString
-                                      else if (json.has("user")) json.get("user").asString
-                                      else "مشترك سكايلان"
-
-                        if (!token.isNullOrBlank() && (status == 200 || status == 1)) {
-                            sessionManager.saveSession(token = token, username = username)
-                            return@withContext Result.success(token)
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                // Check API user endpoint for active hotspot/provider session
-                val apiRequest = Request.Builder()
-                    .url("http://admin.skylineiq.com/user/api/index.php/api/user")
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile; SkylineApp)")
-                    .header("Accept", "application/json")
-                    .apply {
-                        if (latitude != null && longitude != null) {
-                            header("X-Client-Coordinates", "$latitude,$longitude")
-                        }
+                val responseBodyStr = response.body?.string().orEmpty().trim()
+                if (responseBodyStr.startsWith("{")) {
+                    val json = ApiClient.gson.fromJson(responseBodyStr, JsonObject::class.java)
+                    val token = if (json.has("token") && !json.get("token").isJsonNull) json.get("token").asString else null
+                    val status = if (json.has("status") && !json.get("status").isJsonNull) json.get("status").asInt else 200
+                    val username = when {
+                        json.has("username") && !json.get("username").isJsonNull -> json.get("username").asString
+                        json.has("user") && !json.get("user").isJsonNull -> json.get("user").asString
+                        else -> "مشترك سكايلان"
                     }
-                    .get()
-                    .build()
 
-                val apiResponse = ApiClient.okHttpClient.newCall(apiRequest).execute()
-                if (apiResponse.isSuccessful) {
-                    val apiBodyStr = apiResponse.body?.string().orEmpty()
-                    if (apiBodyStr.contains("\"data\"") || apiBodyStr.contains("\"username\"") || apiBodyStr.contains("\"id\"")) {
-                        val sessionToken = "provider_session_${UUID.randomUUID()}"
-                        sessionManager.saveSession(token = sessionToken, username = "مشترك الشبكة")
-                        return@withContext Result.success(sessionToken)
+                    if (!token.isNullOrBlank() && (status == 200 || status == 1)) {
+                        sessionManager.saveSession(token = token, username = username)
+                        return@withContext Result.success(token)
                     }
                 }
-
-                // If provider gateway returns authenticated subscriber page
-                if (responseBodyStr.contains("dashboard", ignoreCase = true) || 
-                    responseBodyStr.contains("لوحة المشترك") || 
-                    responseBodyStr.contains("معلومات الحساب") ||
-                    responseBodyStr.contains("skyline", ignoreCase = true)
-                ) {
-                    val sessionToken = "provider_session_${UUID.randomUUID()}"
-                    sessionManager.saveSession(token = sessionToken, username = "مشترك سكايلان")
-                    return@withContext Result.success(sessionToken)
-                }
-
-                // If user is connected to local router/gateway
-                val fallbackUser = sessionManager.getCachedSubscription()?.user?.username
-                    ?: sessionManager.getUsername()
-                    ?: "مشترك سكايلان"
-                val sessionToken = "gps_session_${UUID.randomUUID()}"
-                sessionManager.saveSession(token = sessionToken, username = fallbackUser)
-                Result.success(sessionToken)
-            } else {
-                Result.failure(Exception("provider_status_${response.code}"))
             }
+            Result.failure(Exception("not_connected_to_provider"))
         } catch (e: Exception) {
-            // Check if cached credentials or offline fallback available
-            val cached = sessionManager.getCachedSubscription()
-            if (cached != null) {
-                val sessionToken = "cached_session_${UUID.randomUUID()}"
-                sessionManager.saveSession(token = sessionToken, username = cached.user?.username ?: "مشترك سكايلان")
-                Result.success(sessionToken)
-            } else {
-                Result.failure(e)
-            }
+            Result.failure(e)
         }
     }
 

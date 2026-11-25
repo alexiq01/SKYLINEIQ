@@ -1,0 +1,241 @@
+{
+  "entities": {
+    "AdminAccount": {
+      "title": "AdminAccount",
+      "description": "Protected admin credentials and verification metadata stored per authorized admin UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the admin document ID."
+        },
+        "email": {
+          "type": "string",
+          "description": "Verified Google account email of the admin."
+        },
+        "adminUsername": {
+          "type": "string",
+          "description": "Custom admin username used for the secondary admin gate."
+        },
+        "passwordSalt": {
+          "type": "string",
+          "description": "Random hex salt used for SHA-256 admin password hashing."
+        },
+        "passwordHash": {
+          "type": "string",
+          "description": "Salted SHA-256 hash of the admin password (never plaintext)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "adminUsername",
+        "passwordSalt",
+        "passwordHash",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RegisteredUser": {
+      "title": "RegisteredUser",
+      "description": "Cloud-synced app user profile used for live admin user counting and version visibility.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID matching the document ID."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in the admin user directory."
+        },
+        "ispUsername": {
+          "type": "string",
+          "description": "Optional ISP subscriber username linked with the user."
+        },
+        "appVersionName": {
+          "type": "string",
+          "description": "Installed application version name."
+        },
+        "appVersionCode": {
+          "type": "integer",
+          "description": "Installed application version code."
+        },
+        "launcherPreset": {
+          "type": "string",
+          "description": "Active launcher icon preset identifier."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "appVersionName",
+        "appVersionCode",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AppConfig": {
+      "title": "AppConfig",
+      "description": "Global application branding (display name, launcher icon preset) and future APK update control managed by admin.",
+      "type": "object",
+      "properties": {
+        "appDisplayName": {
+          "type": "string",
+          "description": "Dynamic app title shown across the app (max 30 chars)."
+        },
+        "appSubtitle": {
+          "type": "string",
+          "description": "Dynamic subtitle shown beneath the app title."
+        },
+        "launcherPreset": {
+          "type": "string",
+          "enum": ["glass_blue", "emerald_pro", "royal_gold", "midnight_net"],
+          "description": "Active launcher icon and home-screen alias preset."
+        },
+        "latestVersionCode": {
+          "type": "integer",
+          "description": "Latest published APK version code."
+        },
+        "latestVersionName": {
+          "type": "string",
+          "description": "Latest published APK version name."
+        },
+        "updateUrl": {
+          "type": "string",
+          "description": "Direct download URL for the APK update."
+        },
+        "forceUpdate": {
+          "type": "boolean",
+          "description": "Whether users must update before continuing."
+        },
+        "updateTitle": {
+          "type": "string",
+          "description": "Dialog headline shown when a new update is available."
+        },
+        "updateMessage": {
+          "type": "string",
+          "description": "Dialog description shown when a new update is available."
+        },
+        "releaseNotes": {
+          "type": "string",
+          "description": "Summary of changes in the new update."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "description": "Admin UID who last updated the configuration."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "appDisplayName",
+        "appSubtitle",
+        "launcherPreset",
+        "latestVersionCode",
+        "latestVersionName",
+        "updateUrl",
+        "forceUpdate",
+        "updateTitle",
+        "updateMessage",
+        "releaseNotes",
+        "updatedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BroadcastNotification": {
+      "title": "BroadcastNotification",
+      "description": "Admin-authored real-time broadcast notification delivered to all users.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Broadcast notification title."
+        },
+        "body": {
+          "type": "string",
+          "description": "Broadcast notification message body."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["fcm_general", "fcm_offer", "fcm_maintenance"],
+          "description": "Notification category for styling and filtering."
+        },
+        "published": {
+          "type": "boolean",
+          "description": "Whether the broadcast is actively published to users."
+        },
+        "senderUid": {
+          "type": "string",
+          "description": "Admin UID that published this broadcast."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp written via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp written via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "title",
+        "body",
+        "category",
+        "published",
+        "senderUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminAccount" },
+      "description": "Admin account records holding secondary username and salted SHA-256 password hash."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/RegisteredUser" },
+      "description": "Cloud-synced app user records for admin user count and version monitoring."
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/AppConfig" },
+      "description": "Singleton app_config/main document controlling remote branding and APK updates."
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": { "$ref": "#/entities/BroadcastNotification" },
+      "description": "Real-time announcements published by admin to all connected clients."
+    }
+  }
+}

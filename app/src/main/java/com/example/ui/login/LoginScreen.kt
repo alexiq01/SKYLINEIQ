@@ -1,17 +1,22 @@
 package com.example.ui.login
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,16 +27,20 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +77,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.repository.AutoLoginCheckStatus
 import com.example.ui.components.AppleAmbientBackground
 import com.example.ui.components.LiquidGlassCard
 import com.example.ui.theme.SkylineBlue
@@ -78,9 +89,12 @@ import com.example.ui.util.HapticFeedbackHelper
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
-    onLoginSuccess: () -> Unit
+    launchAutoLoginStatus: AutoLoginCheckStatus = AutoLoginCheckStatus.IDLE,
+    onLoginSuccess: () -> Unit,
+    onOpenHiddenAdmin: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    val branding by com.example.admin.AppBrandingManager.brandingFlow.collectAsState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -88,10 +102,15 @@ fun LoginScreen(
 
     var showHelpDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(launchAutoLoginStatus) {
+        viewModel.setLaunchAutoLoginStatus(launchAutoLoginStatus)
+    }
+
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is LoginEvent.LoginSuccess -> onLoginSuccess()
+                is LoginEvent.OpenHiddenAdminPortal -> onOpenHiddenAdmin()
             }
         }
     }
@@ -196,13 +215,13 @@ fun LoginScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "• إذا كنت لا تعرف اسم المستخدم أو كلمة المرور، يرجى مراجعة وكيل الإنترنت المزود للخدمة على الرقم: 07821082008",
+                        text = "• عند الاتصال بشبكة Skyline مباشرةً، يقوم التطبيق بمحاولة تسجيل الدخول التلقائي عند الفتح.",
                         fontSize = 14.sp,
                         lineHeight = 22.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "• تأكد من إدخال اسم المستخدم وكلمة المرور بشكل صحيح كما تم تزويدك بها من قِبل الوكيل.",
+                        text = "• إذا كنت خارج شبكة المزود أو لا تعرف اسم المستخدم وكلمة المرور، يرجى مراجعة الوكيل على الرقم: 07821082008",
                         fontSize = 14.sp,
                         lineHeight = 22.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -241,100 +260,130 @@ fun LoginScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(12.dp))
+                // 1. Cohesive Sky-Blue Gradient Hero Header Card
+                val heroGradient = if (isDark) {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF0B294E),
+                            Color(0xFF0E4478),
+                            Color(0xFF0284C7)
+                        )
+                    )
+                } else {
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF0369A1),
+                            Color(0xFF0284C7),
+                            Color(0xFF0EA5E9)
+                        )
+                    )
+                }
 
-                // Soft Brand Aura & Liquid Glass Icon
-                Box(
-                    contentAlignment = Alignment.Center
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("login_hero_header"),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(126.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(
-                                        SkylineBlue.copy(alpha = if (isDark) 0.28f else 0.16f),
-                                        SkylineCyan.copy(alpha = 0.05f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    LiquidGlassCard(
-                        modifier = Modifier.size(92.dp),
-                        shape = RoundedCornerShape(28.dp),
-                        isDark = isDark,
-                        elevation = 10.dp
+                            .fillMaxWidth()
+                            .background(heroGradient)
+                            .padding(horizontal = 20.dp, vertical = 22.dp)
                     ) {
                         Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
+                            modifier = Modifier
+                                .size(130.dp)
+                                .align(Alignment.TopEnd)
+                                .offset(x = 34.dp, y = (-34).dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.09f))
+                        )
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_skyline_logo),
-                                contentDescription = stringResource(R.string.app_name),
+                            Box(
                                 modifier = Modifier
-                                    .size(72.dp)
+                                    .size(78.dp)
                                     .clip(RoundedCornerShape(22.dp))
+                                    .background(Color.White.copy(alpha = 0.18f))
+                                    .border(1.2.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(22.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(id = branding.logoDrawableRes),
+                                    contentDescription = branding.appDisplayName,
+                                    modifier = Modifier
+                                        .size(62.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = branding.appDisplayName,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            Text(
+                                text = branding.appSubtitle,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White.copy(alpha = 0.9f)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "SKYLINE",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isDark) Color.White else Color(0xFF0F172A),
-                    letterSpacing = 1.4.sp
+                // 2. Auto-Login Status Indicator Card (Non-intrusive launch network status)
+                AutoLoginStatusIndicatorBanner(
+                    status = state.autoLoginStatus,
+                    isDark = isDark
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "بوابة إدارة اشتراك الإنترنت",
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = SkylineBlue
-                )
-
-                Spacer(modifier = Modifier.height(26.dp))
-
-                // Apple Liquid Glass Login Widget Container
+                // 3. Elevated Login Form Card
                 LiquidGlassCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("login_form_surface"),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = RoundedCornerShape(26.dp),
                     isDark = isDark,
-                    elevation = 8.dp
+                    elevation = 7.dp
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp)
+                            .padding(22.dp)
                     ) {
                         Text(
-                            text = "مرحباً بعودتك",
-                            fontSize = 20.sp,
+                            text = "تسجيل الدخول بالبيانات",
+                            fontSize = 19.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "أدخل بيانات حسابك لمتابعة تفاصيل الاشتراك والرصيد",
+                            text = "أدخل اسم المستخدم وكلمة المرور لمتابعة تفاصيل اشتراكك",
                             fontSize = 12.5.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(18.dp))
 
                         // Username Field
                         Text(
@@ -368,13 +417,13 @@ fun LoginScreen(
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = SkylineBlue,
-                                unfocusedBorderColor = if (isDark) Color(0xFF2E3D5E) else Color(0xFFE2E8F0),
-                                focusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xCCFFFFFF),
-                                unfocusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0x99F8FAFC)
+                                unfocusedBorderColor = if (isDark) Color(0xFF2E3D5E) else Color(0xFFCBD5E1),
+                                focusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFFFFFFF),
+                                unfocusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
                             )
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
                         // Password Field
                         Text(
@@ -428,15 +477,15 @@ fun LoginScreen(
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = SkylineBlue,
-                                unfocusedBorderColor = if (isDark) Color(0xFF2E3D5E) else Color(0xFFE2E8F0),
-                                focusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xCCFFFFFF),
-                                unfocusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0x99F8FAFC)
+                                unfocusedBorderColor = if (isDark) Color(0xFF2E3D5E) else Color(0xFFCBD5E1),
+                                focusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFFFFFFF),
+                                unfocusedContainerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
                             )
                         )
 
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(22.dp))
 
-                        // Primary Action Button (Login)
+                        // Sky-Blue Gradient Primary Login Button
                         Button(
                             onClick = {
                                 focusManager.clearFocus()
@@ -449,66 +498,84 @@ fun LoginScreen(
                                 .height(52.dp)
                                 .testTag("login_button"),
                             shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(0.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = SkylineBlue,
+                                containerColor = Color.Transparent,
                                 contentColor = Color.White
                             ),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                         ) {
-                            if (state.isLoading && state.loadingMessage == "جاري التحقق...") {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.5.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = state.loadingMessage,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            } else {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "تسجيل الدخول",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowForward,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color(0xFF0284C7),
+                                                SkylineBlue,
+                                                SkylineCyan
+                                            )
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (state.isLoading) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.5.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = state.loadingMessage,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                } else {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = "تسجيل الدخول",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Help Action Link in Glass Pill
+                // 4. Help Action Link (Accessible >= 48dp height)
                 Row(
                     modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .clickable { showHelpDialog = true }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.HelpOutline,
                         contentDescription = null,
                         tint = SkylineBlue,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -519,10 +586,102 @@ fun LoginScreen(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
 }
 
+@Composable
+private fun AutoLoginStatusIndicatorBanner(
+    status: AutoLoginCheckStatus,
+    isDark: Boolean
+) {
+    val isWarning = status == AutoLoginCheckStatus.NETWORK_UNAVAILABLE
+    val isNotProvider = status == AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK
+
+    val containerColor = when {
+        isWarning -> if (isDark) Color(0x33F59E0B) else Color(0xFFFFFBEB)
+        isNotProvider -> if (isDark) Color(0x330284C7) else Color(0xFFF0F9FF)
+        else -> if (isDark) Color(0x2E1E293B) else Color(0xFFF0F7FF)
+    }
+
+    val borderColor = when {
+        isWarning -> if (isDark) Color(0x66FBBF24) else Color(0xFFFCD34D)
+        isNotProvider -> if (isDark) Color(0x6638BDF8) else Color(0xFFBAE6FD)
+        else -> if (isDark) Color(0x4438BDF8) else Color(0xFFDBEAFE)
+    }
+
+    val iconTint = when {
+        isWarning -> if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
+        else -> if (isDark) SkylineCyan else SkylineBlue
+    }
+
+    val titleText = when (status) {
+        AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK ->
+            "الدخول التلقائي متاح عبر شبكة المزود فقط"
+        AutoLoginCheckStatus.NETWORK_UNAVAILABLE ->
+            "تعذر الوصول إلى شبكة المزود عند فتح التطبيق"
+        else ->
+            "الدخول التلقائي مفعّل عبر شبكة Skyline"
+    }
+
+    val subtitleText = when (status) {
+        AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK ->
+            "أنت متصل حالياً بشبكة خارجية — سجّل الدخول ببيانات حسابك للمتابعة"
+        AutoLoginCheckStatus.NETWORK_UNAVAILABLE ->
+            "تأكد من اتصالك بالإنترنت أو أدخل بياناتك لتسجيل الدخول"
+        else ->
+            "يتم تسجيل الدخول تلقائياً عند فتح التطبيق وأنت متصل بشبكة المزود"
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("auto_login_status_indicator"),
+        shape = RoundedCornerShape(18.dp),
+        color = containerColor,
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(iconTint.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isNotProvider || isWarning) Icons.Default.WifiOff else Icons.Default.Wifi,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = titleText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitleText,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
 

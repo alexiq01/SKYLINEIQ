@@ -2,6 +2,7 @@ package com.example
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.test.core.app.ApplicationProvider
@@ -23,8 +24,10 @@ import com.example.data.api.ServiceData
 import com.example.data.api.SkylineApiService
 import com.example.data.api.UnifiedSubscription
 import com.example.data.api.UserAccountData
+import com.example.data.repository.AutoLoginCheckStatus
 import com.example.data.repository.SkylineRepository
 import com.example.data.storage.SessionManager
+import com.example.notifications.FcmNotificationManager
 import com.example.notifications.NotificationInboxManager
 import com.example.security.AppLockManager
 import com.example.ui.theme.ThemeController
@@ -56,7 +59,7 @@ class ExampleRobolectricTest {
     fun `read string from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("اشتراكاتي", appName)
+        assertEquals("Skyline Users", appName)
     }
 
     @Test
@@ -405,6 +408,223 @@ class ExampleRobolectricTest {
             0x1000_0001
         )
         assertNotNull(activity)
+    }
+
+    @Test
+    fun `test launch provider auto login succeeds only when ISP returns valid token`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = SessionManager(context)
+        session.clearSession(clearSavedCredentials = true)
+
+        val providerApi = object : SkylineApiService {
+            override suspend fun login(body: EncryptedPayloadRequest, authHeader: String): Response<LoginResponse> =
+                Response.success(LoginResponse(status = 401, message = "err"))
+
+            override suspend fun autoLogin(): Response<LoginResponse> =
+                Response.success(LoginResponse(status = 200, token = "isp_real_jwt_token"))
+
+            override suspend fun getUser(authHeader: String): Response<ApiResponse<UserAccountData>> =
+                Response.success(
+                    ApiResponse(
+                        status = 200,
+                        data = UserAccountData(id = 42L, name = "Taha", username = "bbn.17@haq2")
+                    )
+                )
+
+            override suspend fun getService(authHeader: String): Response<ApiResponse<ServiceData>> =
+                Response.success(ApiResponse(status = 200, data = null))
+
+            override suspend fun getDashboard(authHeader: String): Response<ApiResponse<DashboardData>> =
+                Response.success(ApiResponse(status = 200, data = null))
+
+            override suspend fun getPackages(authHeader: String): Response<ApiResponse<List<PackageItem>>> =
+                Response.success(ApiResponse(status = 200, data = emptyList()))
+
+            override suspend fun redeem(authHeader: String, body: EncryptedPayloadRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 200))
+
+            override suspend fun extend(authHeader: String, body: ExtendRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 200))
+
+            override suspend fun activate(authHeader: String, body: ActivateRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 200))
+
+            override suspend fun changeService(authHeader: String, body: ChangeServiceRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 200))
+        }
+
+        val repo = SkylineRepository(context = context, apiService = providerApi, sessionManager = session)
+        val status = repo.attemptLaunchProviderAutoLogin()
+
+        assertEquals(AutoLoginCheckStatus.SUCCESS_PROVIDER, status)
+        assertTrue(session.hasValidSession())
+        assertEquals("isp_real_jwt_token", session.getToken())
+        assertEquals("bbn.17@haq2", session.getUsername())
+
+        session.clearSession(clearSavedCredentials = true)
+    }
+
+    @Test
+    fun `test launch provider auto login rejects external networks without creating fake sessions`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val session = SessionManager(context)
+        session.clearSession(clearSavedCredentials = true)
+
+        val externalNetworkApi = object : SkylineApiService {
+            override suspend fun login(body: EncryptedPayloadRequest, authHeader: String): Response<LoginResponse> =
+                Response.success(LoginResponse(status = -3, message = "error_not_allowed"))
+
+            override suspend fun autoLogin(): Response<LoginResponse> =
+                Response.success(LoginResponse(status = -3, token = null, message = "error_not_allowed"))
+
+            override suspend fun getUser(authHeader: String): Response<ApiResponse<UserAccountData>> =
+                Response.success(ApiResponse(status = 401, data = null))
+
+            override suspend fun getService(authHeader: String): Response<ApiResponse<ServiceData>> =
+                Response.success(ApiResponse(status = 401, data = null))
+
+            override suspend fun getDashboard(authHeader: String): Response<ApiResponse<DashboardData>> =
+                Response.success(ApiResponse(status = 401, data = null))
+
+            override suspend fun getPackages(authHeader: String): Response<ApiResponse<List<PackageItem>>> =
+                Response.success(ApiResponse(status = 401, data = null))
+
+            override suspend fun redeem(authHeader: String, body: EncryptedPayloadRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 401))
+
+            override suspend fun extend(authHeader: String, body: ExtendRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 401))
+
+            override suspend fun activate(authHeader: String, body: ActivateRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 401))
+
+            override suspend fun changeService(authHeader: String, body: ChangeServiceRequest): Response<GenericActionResponse> =
+                Response.success(GenericActionResponse(status = 401))
+        }
+
+        val repo = SkylineRepository(context = context, apiService = externalNetworkApi, sessionManager = session)
+        val status = repo.attemptLaunchProviderAutoLogin()
+
+        assertEquals(AutoLoginCheckStatus.NOT_ON_PROVIDER_NETWORK, status)
+        assertFalse(session.hasValidSession())
+        assertNull(session.getToken())
+    }
+
+    @Test
+    fun `test FcmNotificationManager defaults and topic preference persistence`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FcmNotificationManager.resetForTesting(context)
+
+        val initial = FcmNotificationManager.getPreferences(context)
+        assertTrue(initial.generalEnabled)
+        assertTrue(initial.offersEnabled)
+        assertTrue(initial.maintenanceEnabled)
+
+        FcmNotificationManager.setOffersEnabled(context, false)
+        FcmNotificationManager.setMaintenanceEnabled(context, false)
+
+        val updated = FcmNotificationManager.getPreferences(context)
+        assertFalse(updated.offersEnabled)
+        assertFalse(updated.maintenanceEnabled)
+
+        // Verify persistence across reload
+        FcmNotificationManager.resetForTesting(context)
+        FcmNotificationManager.setOffersEnabled(context, false)
+        assertFalse(FcmNotificationManager.getPreferences(context).offersEnabled)
+        FcmNotificationManager.resetForTesting(context)
+    }
+
+    @Test
+    fun `test FcmNotificationManager resolves notification categories cleanly`() {
+        assertEquals(
+            FcmNotificationManager.TYPE_FCM_OFFER,
+            FcmNotificationManager.resolveNotificationCategory(typeHint = "offers", fromTopic = null)
+        )
+        assertEquals(
+            FcmNotificationManager.TYPE_FCM_OFFER,
+            FcmNotificationManager.resolveNotificationCategory(typeHint = null, fromTopic = "/topics/skyline_offers")
+        )
+        assertEquals(
+            FcmNotificationManager.TYPE_FCM_MAINTENANCE,
+            FcmNotificationManager.resolveNotificationCategory(typeHint = "maintenance", fromTopic = null)
+        )
+        assertEquals(
+            FcmNotificationManager.TYPE_FCM_MAINTENANCE,
+            FcmNotificationManager.resolveNotificationCategory(typeHint = null, fromTopic = "/topics/skyline_maintenance")
+        )
+        assertEquals(
+            FcmNotificationManager.TYPE_FCM_GENERAL,
+            FcmNotificationManager.resolveNotificationCategory(typeHint = null, fromTopic = "/topics/skyline_all")
+        )
+    }
+
+    @Test
+    fun `test FcmNotificationManager records incoming message in inbox and deduplicates messageId`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FcmNotificationManager.resetForTesting(context)
+        NotificationInboxManager.clearAll(context)
+
+        val firstRecorded = FcmNotificationManager.handleIncomingCloudMessage(
+            context = context,
+            messageId = "msg_offer_001",
+            title = "عرض باقة الصيف",
+            body = "خصم 20% على تجديد باقة Nitro",
+            typeHint = "offer",
+            fromTopic = "/topics/skyline_offers",
+            showSystemNotification = true
+        )
+        assertTrue(firstRecorded)
+
+        // Duplicate delivery of same messageId must be ignored
+        val duplicateRecorded = FcmNotificationManager.handleIncomingCloudMessage(
+            context = context,
+            messageId = "msg_offer_001",
+            title = "عرض باقة الصيف",
+            body = "خصم 20% على تجديد باقة Nitro",
+            typeHint = "offer",
+            fromTopic = "/topics/skyline_offers",
+            showSystemNotification = true
+        )
+        assertFalse(duplicateRecorded)
+
+        val items = NotificationInboxManager.notificationsFlow.value
+        assertEquals(1, items.size)
+        assertEquals("عرض باقة الصيف", items[0].title)
+        assertEquals(FcmNotificationManager.TYPE_FCM_OFFER, items[0].type)
+
+        NotificationInboxManager.clearAll(context)
+        FcmNotificationManager.resetForTesting(context)
+    }
+
+    @Test
+    fun `test FcmNotificationManager background notification tap intent routes to inbox and records once`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FcmNotificationManager.resetForTesting(context)
+        NotificationInboxManager.clearAll(context)
+
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            putExtra("google.message_id", "bg_msg_101")
+            putExtra("from", "/topics/skyline_maintenance")
+            putExtra("gcm.notification.title", "صيانة مجدولة")
+            putExtra("gcm.notification.body", "تحديث على برج التوزيع الساعة 3 فجراً")
+        }
+
+        FcmNotificationManager.handleLaunchedNotificationIntent(context, launchIntent)
+
+        assertTrue(FcmNotificationManager.openNotificationsTabFlow.value)
+        val items = NotificationInboxManager.notificationsFlow.value
+        assertEquals(1, items.size)
+        assertEquals(FcmNotificationManager.TYPE_FCM_MAINTENANCE, items[0].type)
+        assertEquals("صيانة مجدولة", items[0].title)
+
+        // Re-handling the same intent (e.g., configuration change) does not re-trigger tab open or duplicate item
+        FcmNotificationManager.consumeOpenNotificationsTabRequest()
+        FcmNotificationManager.handleLaunchedNotificationIntent(context, launchIntent)
+        assertFalse(FcmNotificationManager.openNotificationsTabFlow.value)
+        assertEquals(1, NotificationInboxManager.notificationsFlow.value.size)
+
+        NotificationInboxManager.clearAll(context)
+        FcmNotificationManager.resetForTesting(context)
     }
 }
 

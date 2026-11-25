@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+             'email_verified' in request.auth.token &&
+             request.auth.token.email_verified == true &&
+             'email' in request.auth.token &&
+             request.auth.token.email == 'yassindevai01@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+             (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isValidAdminAccount(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+             data.adminUsername is string && data.adminUsername.size() >= 3 && data.adminUsername.size() <= 40 &&
+             data.passwordSalt is string && data.passwordSalt.size() >= 16 && data.passwordSalt.size() <= 64 &&
+             data.passwordHash is string && data.passwordHash.size() >= 64 && data.passwordHash.size() <= 128;
+    }
+
+    function isValidRegisteredUser(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('ispUsername' in data) || (data.ispUsername is string && data.ispUsername.size() <= 64)) &&
+             data.appVersionName is string && data.appVersionName.size() >= 1 && data.appVersionName.size() <= 24 &&
+             data.appVersionCode is int && data.appVersionCode >= 1 && data.appVersionCode <= 1000000 &&
+             (!('launcherPreset' in data) || (data.launcherPreset is string && data.launcherPreset in ['glass_blue', 'emerald_pro', 'royal_gold', 'midnight_net']));
+    }
+
+    function isValidAppConfig(data) {
+      return data.appDisplayName is string && data.appDisplayName.size() >= 1 && data.appDisplayName.size() <= 30 &&
+             data.appSubtitle is string && data.appSubtitle.size() <= 50 &&
+             data.launcherPreset is string && data.launcherPreset in ['glass_blue', 'emerald_pro', 'royal_gold', 'midnight_net'] &&
+             data.latestVersionCode is int && data.latestVersionCode >= 1 && data.latestVersionCode <= 1000000 &&
+             data.latestVersionName is string && data.latestVersionName.size() >= 1 && data.latestVersionName.size() <= 24 &&
+             data.updateUrl is string && data.updateUrl.size() <= 500 &&
+             data.forceUpdate is bool &&
+             data.updateTitle is string && data.updateTitle.size() >= 1 && data.updateTitle.size() <= 80 &&
+             data.updateMessage is string && data.updateMessage.size() >= 1 && data.updateMessage.size() <= 300 &&
+             data.releaseNotes is string && data.releaseNotes.size() <= 500 &&
+             data.updatedByUid is string && data.updatedByUid.size() >= 1 && data.updatedByUid.size() <= 128;
+    }
+
+    function isValidBroadcast(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 1000 &&
+             data.category is string && data.category in ['fcm_general', 'fcm_offer', 'fcm_maintenance'] &&
+             data.published is bool &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128;
+    }
+
+    // 1. Admin credentials (strictly self-owned by verified admin)
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isSignedIn() && request.auth.uid == adminId && isAdmin();
+      allow list: if false;
+
+      allow create: if isValidId(adminId) &&
+                       isAdmin() &&
+                       request.auth.uid == adminId &&
+                       incoming().uid == request.auth.uid &&
+                       incoming().keys().hasAll(['uid', 'email', 'adminUsername', 'passwordSalt', 'passwordHash', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'email', 'adminUsername', 'passwordSalt', 'passwordHash', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidAdminAccount(incoming());
+
+      allow update: if isValidId(adminId) &&
+                       isAdmin() &&
+                       request.auth.uid == adminId &&
+                       isValidAdminAccount(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'adminUsername', 'passwordSalt', 'passwordHash', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // 2. Registered Users Directory (self-owned write, owner or admin read/list)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isBootstrappedAdmin());
+
+      allow create: if isValidId(userId) &&
+                       isSignedIn() &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'appVersionName', 'appVersionCode', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'ispUsername', 'appVersionName', 'appVersionCode', 'launcherPreset', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidRegisteredUser(incoming());
+
+      allow update: if isValidId(userId) &&
+                       isSignedIn() &&
+                       isValidRegisteredUser(incoming()) &&
+                       (request.auth.uid == userId || isAdmin()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'ispUsername', 'appVersionName', 'appVersionCode', 'launcherPreset', 'updatedAt']);
+
+      allow delete: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // 3. Global App Config (singleton 'main' readable by app clients; writable ONLY by admin)
+    match /app_config/{configId} {
+      allow get: if configId == 'main';
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if configId == 'main' &&
+                       isAdmin() &&
+                       incoming().updatedByUid == request.auth.uid &&
+                       incoming().keys().hasAll(['appDisplayName', 'appSubtitle', 'launcherPreset', 'latestVersionCode', 'latestVersionName', 'updateUrl', 'forceUpdate', 'updateTitle', 'updateMessage', 'releaseNotes', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['appDisplayName', 'appSubtitle', 'launcherPreset', 'latestVersionCode', 'latestVersionName', 'updateUrl', 'forceUpdate', 'updateTitle', 'updateMessage', 'releaseNotes', 'updatedByUid', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidAppConfig(incoming());
+
+      allow update: if configId == 'main' &&
+                       isAdmin() &&
+                       isValidAppConfig(incoming()) &&
+                       incoming().updatedByUid == request.auth.uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['appDisplayName', 'appSubtitle', 'launcherPreset', 'latestVersionCode', 'latestVersionName', 'updateUrl', 'forceUpdate', 'updateTitle', 'updateMessage', 'releaseNotes', 'updatedByUid', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // 4. Instant Admin Broadcasts (published broadcasts readable via filtered query; admin full control)
+    match /broadcasts/{broadcastId} {
+      allow get: if isValidId(broadcastId) && (resource.data.published == true || isAdmin());
+      allow list: if resource.data.published == true || isBootstrappedAdmin();
+
+      allow create: if isValidId(broadcastId) &&
+                       isAdmin() &&
+                       incoming().senderUid == request.auth.uid &&
+                       incoming().keys().hasAll(['title', 'body', 'category', 'published', 'senderUid', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['title', 'body', 'category', 'published', 'senderUid', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       isValidBroadcast(incoming());
+
+      allow update: if isValidId(broadcastId) &&
+                       isAdmin() &&
+                       isValidBroadcast(incoming()) &&
+                       incoming().senderUid == existing().senderUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'body', 'category', 'published', 'updatedAt']);
+
+      allow delete: if isValidId(broadcastId) && isAdmin();
+    }
+  }
+}

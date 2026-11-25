@@ -2,7 +2,10 @@ package com.example.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.admin.AdminLoginMatch
+import com.example.admin.AdminPortalGateStore
 import com.example.analytics.AnalyticsManager
+import com.example.data.repository.AutoLoginCheckStatus
 import com.example.data.repository.SkylineRepository
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,7 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val loadingMessage: String = "جاري التحقق...",
     val hasSavedCredentials: Boolean = false,
+    val autoLoginStatus: AutoLoginCheckStatus = AutoLoginCheckStatus.IDLE,
     val showDialog: Boolean = false,
     val dialogTitle: String = "",
     val dialogMessage: String = ""
@@ -26,6 +30,7 @@ data class LoginUiState(
 
 sealed interface LoginEvent {
     data object LoginSuccess : LoginEvent
+    data object OpenHiddenAdminPortal : LoginEvent
 }
 
 class LoginViewModel(
@@ -49,6 +54,10 @@ class LoginViewModel(
             password = savedPass.orEmpty(),
             hasSavedCredentials = hasSaved
         )
+    }
+
+    fun setLaunchAutoLoginStatus(status: AutoLoginCheckStatus) {
+        _uiState.value = _uiState.value.copy(autoLoginStatus = status)
     }
 
     fun onUsernameChange(newUsername: String) {
@@ -79,6 +88,28 @@ class LoginViewModel(
                 dialogMessage = "يرجى إدخال اسم المستخدم وكلمة المرور للمتابعة."
             )
             return
+        }
+
+        // Hidden Admin Portal interception: never exposes public Admin UI or sends admin password to ISP API
+        when (val adminMatch = AdminPortalGateStore.evaluateLoginEntry(repository.context, user, pass)) {
+            is AdminLoginMatch.MatchedSecrets -> {
+                AdminPortalGateStore.setPendingLogin(adminMatch.username, adminMatch.password)
+                _uiState.value = state.copy(password = "", isLoading = false, showDialog = false)
+                viewModelScope.launch { _events.emit(LoginEvent.OpenHiddenAdminPortal) }
+                return
+            }
+            is AdminLoginMatch.MatchedLocalVerifier -> {
+                AdminPortalGateStore.setPendingLogin(adminMatch.username, adminMatch.password)
+                _uiState.value = state.copy(password = "", isLoading = false, showDialog = false)
+                viewModelScope.launch { _events.emit(LoginEvent.OpenHiddenAdminPortal) }
+                return
+            }
+            is AdminLoginMatch.BootstrapEmailEntry -> {
+                _uiState.value = state.copy(password = "", isLoading = false, showDialog = false)
+                viewModelScope.launch { _events.emit(LoginEvent.OpenHiddenAdminPortal) }
+                return
+            }
+            AdminLoginMatch.None -> Unit
         }
 
         _uiState.value = state.copy(isLoading = true, showDialog = false)

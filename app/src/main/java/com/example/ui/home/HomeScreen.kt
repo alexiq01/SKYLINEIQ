@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CardMembership
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Circle
@@ -48,6 +50,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsNone
@@ -161,6 +164,7 @@ fun HomeScreen(
     onLogout: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val branding by com.example.admin.AppBrandingManager.brandingFlow.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val isDark = isAppInDarkTheme()
@@ -180,10 +184,18 @@ fun HomeScreen(
     val inboxItems by com.example.notifications.NotificationInboxManager.notificationsFlow.collectAsState()
     val notificationSettings by NotificationScheduler.settingsFlow.collectAsState()
     val appLockState by com.example.security.AppLockManager.lockStateFlow.collectAsState()
+    val openNotificationsTab by com.example.notifications.FcmNotificationManager.openNotificationsTabFlow.collectAsState()
 
     LaunchedEffect(Unit) {
         NotificationScheduler.getNotificationSettings(context)
         com.example.security.AppLockManager.init(context)
+    }
+
+    LaunchedEffect(openNotificationsTab) {
+        if (openNotificationsTab) {
+            selectedTab = 2
+            com.example.notifications.FcmNotificationManager.consumeOpenNotificationsTabRequest()
+        }
     }
 
     LaunchedEffect(selectedTab, inboxItems.size) {
@@ -292,8 +304,8 @@ fun HomeScreen(
                         .padding(20.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.ic_skyline_logo),
-                        contentDescription = null,
+                        painter = painterResource(id = branding.logoDrawableRes),
+                        contentDescription = branding.appDisplayName,
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
@@ -608,8 +620,8 @@ fun HomeScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Image(
-                                    painter = painterResource(id = R.drawable.ic_skyline_logo),
-                                    contentDescription = null,
+                                    painter = painterResource(id = branding.logoDrawableRes),
+                                    contentDescription = branding.appDisplayName,
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clip(CircleShape)
@@ -617,13 +629,13 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
                                     Text(
-                                        text = stringResource(R.string.app_name),
+                                        text = branding.appDisplayName,
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "SKYLINE INTERNET",
+                                        text = branding.appSubtitle,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = SkylineCyan,
@@ -636,7 +648,7 @@ fun HomeScreen(
                                 1 -> "تفاصيل الاشتراك"
                                 2 -> "الإشعارات والتنبيهات"
                                 3 -> "عن المطور"
-                                else -> stringResource(R.string.app_name)
+                                else -> branding.appDisplayName
                             }
                             Text(
                                 text = screenTitle,
@@ -1307,208 +1319,208 @@ private fun HomeScreenDashboard(
     val haptic = LocalHapticFeedback.current
     val isDark = isAppInDarkTheme()
 
-    // 1. Hero Plan Card (Subscriber overview, live status, circular gauge)
-    MiniPlanHeaderCard(
-        planName = service?.profileName?.takeIf { it.isNotBlank() } ?: "غير محدد",
-        clientName = user?.name?.takeIf { it.isNotBlank() }
-            ?: user?.username?.takeIf { it.isNotBlank() }
-            ?: "مشترك سكايلان",
-        username = user?.username?.takeIf { it.isNotBlank() } ?: "—",
-        expirationDate = service?.expiration,
-        price = service?.price,
-        isActive = isSubscriptionActive,
-        remainingDays = remainingDays,
-        isOnline = isOnline,
-        isRefreshing = isRefreshing,
-        lastUpdatedFormatted = lastUpdatedFormatted,
-        onRefresh = onRefresh,
-        onClick = onNavigateToSubscription
-    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_dashboard_column"),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 1. Hero Plan Card (Sky-blue gradient overview, live status, circular gauge)
+        MiniPlanHeaderCard(
+            planName = service?.profileName?.takeIf { it.isNotBlank() } ?: "غير محدد",
+            clientName = user?.name?.takeIf { it.isNotBlank() }
+                ?: user?.username?.takeIf { it.isNotBlank() }
+                ?: "مشترك سكايلان",
+            username = user?.username?.takeIf { it.isNotBlank() } ?: "—",
+            expirationDate = service?.expiration,
+            price = service?.price,
+            isActive = isSubscriptionActive,
+            remainingDays = remainingDays,
+            isOnline = isOnline,
+            isRefreshing = isRefreshing,
+            lastUpdatedFormatted = lastUpdatedFormatted,
+            onRefresh = onRefresh,
+            onClick = onNavigateToSubscription
+        )
 
-    Spacer(modifier = Modifier.height(16.dp))
+        // 2. Quick Actions Grid (الوصول السريع)
+        IPhoneControlCenterGrid(
+            onNavigateToSubscription = { onNavigateToSubscription?.invoke() },
+            onOpenRenewDialog = onRenew,
+            onOpenSupport = {
+                try {
+                    val msg = "مرحباً الدعم الفني لخدمة Skyline Internet.\nاسم المستخدم: ${user?.username ?: ""}"
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("https://wa.me/${DEVELOPER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            },
+            onCallAgent = {
+                try {
+                    val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$AGENT_RESELLER_PHONE_NUMBER")).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        )
 
-    // 2. Quick Actions Grid (الوصول السريع)
-    IPhoneControlCenterGrid(
-        onNavigateToSubscription = { onNavigateToSubscription?.invoke() },
-        onOpenRenewDialog = onRenew,
-        onOpenSupport = {
-            try {
-                val msg = "مرحباً الدعم الفني لخدمة Skyline Internet.\nاسم المستخدم: ${user?.username ?: ""}"
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse("https://wa.me/${DEVELOPER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-        },
-        onCallAgent = {
-            try {
-                val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$AGENT_RESELLER_PHONE_NUMBER")).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-        }
-    )
+        // 3. Alert Banner if Subscription is Expired or Expiring in <= 3 days
+        if (!isSubscriptionActive || remainingDays <= 0) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("card_expired_warning_banner"),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0x28EF4444) else Color(0xFFFEF2F2)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEF4444).copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "انتهى اشتراكك الحالي!",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color(0xFFFCA5A5) else Color(0xFF991B1B)
+                            )
+                            Text(
+                                text = "يرجى تجديد الاشتراك أو التواصل مع الوكيل لتفعيل الخدمة فوراً",
+                                fontSize = 12.sp,
+                                color = if (isDark) Color(0xFFFECACA) else Color(0xFFB91C1C)
+                            )
+                        }
+                    }
 
-    // 3. Alert Banner if Subscription is Expired or Expiring in <= 3 days
-    if (!isSubscriptionActive || remainingDays <= 0) {
-        Spacer(modifier = Modifier.height(14.dp))
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("card_expired_warning_banner"),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isDark) Color(0x28EF4444) else Color(0xFFFEF2F2)
-            ),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFEF4444).copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "انتهى اشتراكك الحالي!",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDark) Color(0xFFFCA5A5) else Color(0xFF991B1B)
-                        )
-                        Text(
-                            text = "يرجى تجديد الاشتراك أو التواصل مع الوكيل لتفعيل الخدمة فوراً",
-                            fontSize = 12.sp,
-                            color = if (isDark) Color(0xFFFECACA) else Color(0xFFB91C1C)
-                        )
+                        Button(
+                            onClick = {
+                                HapticFeedbackHelper.performClick(context, haptic)
+                                try {
+                                    val msg = "مرحباً، لقد انتهى اشتراكي وأود تفعيله عبر الوكيل.\nاسم المستخدم: ${user?.username ?: ""}"
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        data = Uri.parse("https://wa.me/${AGENT_RESELLER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(48.dp)
+                                .testTag("btn_expired_contact_agent"),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_whatsapp),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("تواصل مع الوكيل للتفعيل", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = {
+                                HapticFeedbackHelper.performClick(context, haptic)
+                                onRenew()
+                            },
+                            modifier = Modifier
+                                .weight(0.9f)
+                                .height(48.dp)
+                                .testTag("btn_expired_renew"),
+                            colors = ButtonDefaults.buttonColors(containerColor = SkylineBlue),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("تجديد بالكارت", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
+            }
+        } else if (remainingDays in 1..3) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = if (isDark) Color(0x28F59E0B) else Color(0xFFFFFBEB),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f))
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Button(
+                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = null,
+                            tint = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "اقترب موعد انتهاء الاشتراك ($remainingDays أيام متبقية)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)
+                            )
+                            Text(
+                                text = "يمكنك التواصل مسبقاً مع الوكيل لتجهيز التجديد",
+                                fontSize = 11.sp,
+                                color = if (isDark) Color(0xFFFCD34D) else Color(0xFFB45309)
+                            )
+                        }
+                    }
+                    TextButton(
                         onClick = {
                             HapticFeedbackHelper.performClick(context, haptic)
                             try {
-                                val msg = "مرحباً، لقد انتهى اشتراكي وأود تفعيله عبر الوكيل.\nاسم المستخدم: ${user?.username ?: ""}"
+                                val msg = "مرحباً، اشتراكي سينتهي خلال $remainingDays أيام وأود تجديده.\nاسم المستخدم: ${user?.username ?: ""}"
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = Uri.parse("https://wa.me/${AGENT_RESELLER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                 }
                                 context.startActivity(intent)
-                            } catch (_: Exception) {
-                            }
+                            } catch (_: Exception) {}
                         },
                         modifier = Modifier
-                            .weight(1.3f)
-                            .height(48.dp)
-                            .testTag("btn_expired_contact_agent"),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
-                        shape = RoundedCornerShape(12.dp)
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("btn_expiring_contact_agent")
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_whatsapp),
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("تواصل مع الوكيل للتفعيل", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-
-                    Button(
-                        onClick = {
-                            HapticFeedbackHelper.performClick(context, haptic)
-                            onRenew()
-                        },
-                        modifier = Modifier
-                            .weight(0.9f)
-                            .height(48.dp)
-                            .testTag("btn_expired_renew"),
-                        colors = ButtonDefaults.buttonColors(containerColor = SkylineBlue),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("تجديد بالكارت", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("مراسلة الوكيل", color = Color(0xFF25D366), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
         }
-    } else if (remainingDays in 1..3) {
-        Spacer(modifier = Modifier.height(14.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = if (isDark) Color(0x28F59E0B) else Color(0xFFFFFBEB),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.5f))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = null,
-                        tint = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "اقترب موعد انتهاء الاشتراك ($remainingDays أيام متبقية)",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isDark) Color(0xFFFDE68A) else Color(0xFF92400E)
-                        )
-                        Text(
-                            text = "يمكنك التواصل مسبقاً مع الوكيل لتجهيز التجديد",
-                            fontSize = 11.sp,
-                            color = if (isDark) Color(0xFFFCD34D) else Color(0xFFB45309)
-                        )
-                    }
-                }
-                TextButton(
-                    onClick = {
-                        HapticFeedbackHelper.performClick(context, haptic)
-                        try {
-                            val msg = "مرحباً، اشتراكي سينتهي خلال $remainingDays أيام وأود تجديده.\nاسم المستخدم: ${user?.username ?: ""}"
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://wa.me/${AGENT_RESELLER_WHATSAPP_NUMBER.replace("+", "")}?text=${Uri.encode(msg)}")
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        } catch (_: Exception) {}
-                    },
-                    modifier = Modifier
-                        .defaultMinSize(minHeight = 48.dp)
-                        .testTag("btn_expiring_contact_agent")
-                ) {
-                    Text("مراسلة الوكيل", color = Color(0xFF25D366), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                }
-            }
-        }
-    }
-
-    Spacer(modifier = Modifier.height(16.dp))
 
     // 4. Clean 2x2 Subscription & Balance Overview Card
     val currentBalance = user?.balance ?: dashboard?.balance ?: 0.0
@@ -1638,9 +1650,7 @@ private fun HomeScreenDashboard(
         }
     }
 
-    Spacer(modifier = Modifier.height(16.dp))
-
-    // 5. Consolidated Account & Service Info Card (No duplicate KPIs, no IP/speed/start_date)
+    // 5. Consolidated Account & Service Info Card
     LiquidGlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -1743,7 +1753,8 @@ private fun HomeScreenDashboard(
         }
     }
 
-    Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+    }
 }
 
 /**
@@ -1762,10 +1773,10 @@ private fun ModernKpiCard(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        color = if (isDark) Color(0x2E1E293B) else Color(0x66F1F5F9),
+        color = if (isDark) Color(0x40162742) else Color(0xFFF0F7FF),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isDark) Color(0x3338BDF8) else Color(0x40CBD5E1)
+            if (isDark) Color(0x3838BDF8) else Color(0xFFD6E6FA)
         )
     ) {
         Column(
@@ -1780,7 +1791,7 @@ private fun ModernKpiCard(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(RoundedCornerShape(9.dp))
-                        .background(iconTint.copy(alpha = 0.15f)),
+                        .background(iconTint.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -1809,7 +1820,7 @@ private fun ModernKpiCard(
 }
 
 /**
- * Mini header card present at the top of Screen 4 and Screen 5 (Apple Liquid Glass Hero Widget)
+ * Sky-Blue Gradient Hero Widget at the top of the Home Dashboard
  */
 @Composable
 private fun MiniPlanHeaderCard(
@@ -1827,167 +1838,260 @@ private fun MiniPlanHeaderCard(
     onClick: (() -> Unit)? = null
 ) {
     val isDark = isAppInDarkTheme()
-    LiquidGlassCard(
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val heroGradient = if (isDark) {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF0B294E),
+                Color(0xFF0E4478),
+                Color(0xFF0284C7)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(
+                Color(0xFF0369A1),
+                Color(0xFF0284C7),
+                Color(0xFF0EA5E9)
+            )
+        )
+    }
+
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("mini_plan_card"),
+            .testTag("mini_plan_card")
+            .then(
+                if (onClick != null) Modifier.clickable { onClick() } else Modifier
+            ),
         shape = RoundedCornerShape(26.dp),
-        isDark = isDark,
-        elevation = 7.dp,
-        onClick = onClick
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            Color.White.copy(alpha = if (isDark) 0.22f else 0.35f)
+        )
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            CardOnlineStatusIndicator(
-                isOnline = isOnline,
-                isRefreshing = isRefreshing,
-                lastUpdatedFormatted = lastUpdatedFormatted,
-                onRefresh = onRefresh
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(heroGradient)
+        ) {
+            // Subtle decorative sky sheen orb
+            Box(
+                modifier = Modifier
+                    .size(160.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 40.dp, y = (-40).dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.08f))
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    // Subscriber Name & Monogram Avatar
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                // Online status & quick refresh pill inside Sky-Blue Hero Card
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.14f))
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("card_online_status_indicator"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(8.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(SkylineBlue, SkylineCyan)
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = (clientName?.trim()?.take(1)?.takeIf { it.isNotBlank() } ?: "م"),
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
+                                .background(if (isOnline) Color(0xFF4ADE80) else Color(0xFFFBBF24))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = clientName?.takeIf { it.isNotBlank() } ?: "مشترك سكايلان",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = if (!username.isNullOrBlank() && username != "—") "المشترك • @$username" else "مشترك سكايلان",
+                                text = if (isOnline) "متصل بالخدمة • محدث الآن" else "وضع عدم الاتصال • بيانات محفوظة",
                                 fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Plan Pill Tag & Status Badge
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = SkylineBlue.copy(alpha = 0.12f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, SkylineBlue.copy(alpha = 0.25f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(SkylineBlue)
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
+                            if (lastUpdatedFormatted.isNotBlank()) {
                                 Text(
-                                    text = "باقة $planName",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SkylineBlue
+                                    text = "آخر تحديث: $lastUpdatedFormatted",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.8f)
                                 )
                             }
                         }
-                        StatusBadge(isActive = isActive)
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Expiration Capsule
-                    val expTint = if (remainingDays <= 0) {
-                        if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
-                    } else SkylineBlue
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (remainingDays <= 0) Color(0x22EF4444) else (if (isDark) Color(0x331E293B) else Color(0x80F1F5F9))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    if (onRefresh != null) {
+                        IconButton(
+                            onClick = {
+                                HapticFeedbackHelper.performClick(context, haptic)
+                                onRefresh()
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("btn_refresh_card_status")
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AccessTime,
-                                contentDescription = null,
-                                tint = expTint,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = NotificationScheduler.formatExpirationWithRemainingTime(expirationDate),
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = expTint
-                            )
-                        }
-                    }
-
-                    if (price != null && price > 0) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = SkylineSuccess.copy(alpha = 0.12f)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CreditCard,
-                                    contentDescription = null,
-                                    tint = SkylineSuccess,
-                                    modifier = Modifier.size(13.dp)
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "سعر الاشتراك: IQD ${String.format(Locale.US, "%,.0f", price)}",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = SkylineSuccess
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "تحديث البيانات الآن",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                CircularDaysGauge(
-                    days = remainingDays,
-                    percentage = if (remainingDays <= 0) 0f else (remainingDays / 30f).coerceIn(0.05f, 1f),
-                    size = 84.dp
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.22f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = (clientName?.trim()?.take(1)?.takeIf { it.isNotBlank() } ?: "م"),
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = clientName?.takeIf { it.isNotBlank() } ?: "مشترك سكايلان",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (!username.isNullOrBlank() && username != "—") "المشترك • @$username" else "مشترك سكايلان",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.18f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = "باقة $planName",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isActive) Color(0xFF16A34A).copy(alpha = 0.9f) else Color(0xFFDC2626).copy(alpha = 0.9f)
+                            ) {
+                                Text(
+                                    text = if (isActive) stringResource(R.string.status_active) else stringResource(R.string.status_expired),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White.copy(alpha = 0.14f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccessTime,
+                                    contentDescription = null,
+                                    tint = if (remainingDays <= 0) Color(0xFFFECACA) else Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = NotificationScheduler.formatExpirationWithRemainingTime(expirationDate),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (remainingDays <= 0) Color(0xFFFECACA) else Color.White
+                                )
+                            }
+                        }
+
+                        if (price != null && price > 0) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color.White.copy(alpha = 0.16f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CreditCard,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "سعر الاشتراك: IQD ${String.format(Locale.US, "%,.0f", price)}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    CircularDaysGauge(
+                        days = remainingDays,
+                        percentage = if (remainingDays <= 0) 0f else (remainingDays / 30f).coerceIn(0.05f, 1f),
+                        size = 86.dp,
+                        onSkyGradient = true
+                    )
+                }
             }
         }
     }
@@ -2164,6 +2268,11 @@ private fun NotificationsTabScreen(
             }
         }
 
+        // Firebase Cloud Messaging Topics Card
+        FcmNotificationSettingsCard(
+            onShowMessage = onShowMessage
+        )
+
         // WorkManager Scheduled System Notification Settings Card
         ScheduledNotificationsSettingsCard(
             expirationDateStr = expirationDateStr,
@@ -2243,11 +2352,34 @@ private fun NotificationFeedCard(item: com.example.notifications.AppNotification
     val isDark = isAppInDarkTheme()
     val isExpired = item.type == "expired"
     val isExpiringSoon = item.type == "expiring_soon" || item.type == "3d" || item.type == "24h" || item.type == "1h"
+    val isFcmOffer = item.type == com.example.notifications.FcmNotificationManager.TYPE_FCM_OFFER
+    val isFcmMaintenance = item.type == com.example.notifications.FcmNotificationManager.TYPE_FCM_MAINTENANCE
+    val isFcmGeneral = item.type == com.example.notifications.FcmNotificationManager.TYPE_FCM_GENERAL
+    val isRenewed = item.type == "renewed"
 
     val iconColor = when {
         isExpired -> Color(0xFFEF4444)
-        isExpiringSoon -> Color(0xFFF59E0B)
+        isExpiringSoon || isFcmMaintenance -> Color(0xFFF59E0B)
+        isFcmOffer || isRenewed -> SkylineSuccess
         else -> SkylineBlue
+    }
+
+    val iconVector = when {
+        isFcmOffer -> Icons.Default.LocalOffer
+        isFcmMaintenance -> Icons.Default.Build
+        isFcmGeneral -> Icons.Default.Campaign
+        isRenewed -> Icons.Default.CheckCircle
+        else -> Icons.Default.Notifications
+    }
+
+    val categoryLabel = when {
+        isFcmOffer -> "عرض خاص"
+        isFcmMaintenance -> "صيانة"
+        isFcmGeneral -> "إشعار سحابي"
+        isRenewed -> "تم التفعيل"
+        isExpired -> "منتهي"
+        isExpiringSoon -> "تنبيه اشتراك"
+        else -> null
     }
 
     Card(
@@ -2278,7 +2410,7 @@ private fun NotificationFeedCard(item: com.example.notifications.AppNotification
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Notifications,
+                    imageVector = iconVector,
                     contentDescription = null,
                     tint = iconColor,
                     modifier = Modifier.size(22.dp)
@@ -2297,18 +2429,36 @@ private fun NotificationFeedCard(item: com.example.notifications.AppNotification
                         text = item.title,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
                     )
-                    if (item.formattedTime.isNotBlank()) {
-                        Text(
-                            text = item.formattedTime,
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    if (categoryLabel != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = iconColor.copy(alpha = 0.14f)
+                        ) {
+                            Text(
+                                text = categoryLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = iconColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                if (item.formattedTime.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = item.formattedTime,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(5.dp))
 
                 Text(
                     text = item.message,

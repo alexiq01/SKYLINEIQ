@@ -312,4 +312,21 @@ object AnalyticsManager {
             mapOf("action" to action)
         )
     }
+
+    fun logCloudNotificationReceived(category: String) {
+        logEvent(
+            "fcm_notification_received",
+            mapOf("category" to category)
+        )
+    }
+
+    fun logCloudTopicPreferenceChanged(topic: String, enabled: Boolean) {
+        logEvent(
+            "fcm_topic_updated",
+            mapOf(
+                "topic" to topic,
+                "state" to if (enabled) "subscribed" else "unsubscribed"
+            )
+        )
+    }
 }

@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -25,7 +26,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -41,12 +44,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.admin.AdminFirebaseRepository
 import com.example.analytics.AnalyticsManager
+import com.example.data.repository.AutoLoginCheckStatus
 import com.example.data.repository.SkylineRepository
 import com.example.data.storage.SessionManager
 import com.example.security.AppLockManager
 import com.example.security.AppLockScreen
 import com.example.security.AppSecurityEngine
+import com.example.ui.admin.AdminScreen
+import com.example.ui.admin.AdminViewModel
 import com.example.ui.home.HomeScreen
 import com.example.ui.home.HomeViewModel
 import com.example.ui.login.LoginScreen
@@ -79,6 +86,8 @@ class MainActivity : FragmentActivity() {
         })
 
         com.example.notifications.NotificationInboxManager.init(applicationContext)
+        com.example.notifications.FcmNotificationManager.initAndSyncTopics(applicationContext)
+        com.example.notifications.FcmNotificationManager.handleLaunchedNotificationIntent(applicationContext, intent)
         com.example.ui.theme.ThemeController.init(this)
         AnalyticsManager.init(applicationContext)
         if (savedInstanceState == null) {
@@ -115,7 +124,8 @@ class MainActivity : FragmentActivity() {
                 ) {
                     val appContext = LocalContext.current.applicationContext
                     LaunchedEffect(Unit) {
-                        // Check for updates via Firebase Remote Config
+                        com.example.admin.RemoteSyncManager.start(appContext)
+                        // Check for updates via Firebase Remote Config (Firestore listener overrides if present)
                         UpdateManager.checkForUpdates(appContext)
                     }
 
@@ -128,6 +138,12 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        com.example.notifications.FcmNotificationManager.handleLaunchedNotificationIntent(applicationContext, intent)
     }
 }
 
@@ -156,6 +172,7 @@ fun AppNavigation() {
     val lockState by AppLockManager.lockStateFlow.collectAsState()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    var launchAutoLoginStatus by remember { mutableStateOf(AutoLoginCheckStatus.IDLE) }
 
     LaunchedEffect(currentRoute, lockState.isLocked) {
         when {
@@ -165,6 +182,8 @@ fun AppNavigation() {
                 AnalyticsManager.logScreenView("splash", "SplashScreen")
             currentRoute == "login" ->
                 AnalyticsManager.logScreenView("login", "LoginScreen")
+            currentRoute == "admin" ->
+                AnalyticsManager.logScreenView("admin_portal", "AdminScreen")
         }
     }
 
@@ -201,7 +220,9 @@ fun AppNavigation() {
             composable("splash") {
                 SplashScreen(
                     hasValidSession = repository.sessionManager.hasValidSession(),
-                    onNavigateNext = { dest ->
+                    onAttemptProviderAutoLogin = { repository.attemptLaunchProviderAutoLogin() },
+                    onNavigateNext = { dest, status ->
+                        launchAutoLoginStatus = status
                         navController.navigate(dest) {
                             popUpTo("splash") { inclusive = true }
                         }
@@ -221,10 +242,14 @@ fun AppNavigation() {
 
                 LoginScreen(
                     viewModel = loginViewModel,
+                    launchAutoLoginStatus = launchAutoLoginStatus,
                     onLoginSuccess = {
                         navController.navigate("home") {
                             popUpTo("login") { inclusive = true }
                         }
+                    },
+                    onOpenHiddenAdmin = {
+                        navController.navigate("admin")
                     }
                 )
             }
@@ -242,16 +267,35 @@ fun AppNavigation() {
                 HomeScreen(
                     viewModel = homeViewModel,
                     onSessionExpired = {
+                        launchAutoLoginStatus = AutoLoginCheckStatus.IDLE
                         navController.navigate("login") {
                             popUpTo("home") { inclusive = true }
                         }
                     },
                     onLogout = {
+                        launchAutoLoginStatus = AutoLoginCheckStatus.IDLE
                         AppLockManager.unlockApp(context)
                         navController.navigate("login") {
                             popUpTo("home") { inclusive = true }
                         }
                     }
+                )
+            }
+
+            composable("admin") {
+                val adminRepository = remember { AdminFirebaseRepository(context) }
+                val adminViewModel: AdminViewModel = viewModel(
+                    factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                        @Suppress("UNCHECKED_CAST")
+                        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                            return AdminViewModel(context, adminRepository) as T
+                        }
+                    }
+                )
+
+                AdminScreen(
+                    viewModel = adminViewModel,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }
@@ -267,6 +311,7 @@ fun AppNavigation() {
                     AppLockManager.unlockApp(context)
                 },
                 onResetAndLogout = {
+                    launchAutoLoginStatus = AutoLoginCheckStatus.IDLE
                     repository.logout()
                     AppLockManager.resetLockOnLogout(context)
                     navController.navigate("login") {

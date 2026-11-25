@@ -124,10 +124,10 @@ fun AppleAmbientBackground(
                 } else {
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFFF6F8FD),
+                            Color(0xFFEAF4FF),
+                            Color(0xFFF3F8FF),
                             Color(0xFFFFFFFF),
-                            Color(0xFFEFF5FC),
-                            Color(0xFFF8FAFD)
+                            Color(0xFFF4F9FF)
                         )
                     )
                 }
@@ -978,16 +978,16 @@ fun LiquidGlassCard(
     val glassBg = if (isDark) {
         Brush.verticalGradient(
             listOf(
-                Color(0xEE111C30),
-                Color(0xDD0D1728)
+                Color(0xF5111E34),
+                Color(0xEE0C1628)
             )
         )
     } else {
         Brush.verticalGradient(
             listOf(
-                Color(0xEEFFFFFF),
-                Color(0xDCFFFFFF),
-                Color(0xD0F2F7FD)
+                Color(0xFFFFFFFF),
+                Color(0xFCFFFFFF),
+                Color(0xF7EFF7FF)
             )
         )
     }
@@ -995,16 +995,15 @@ fun LiquidGlassCard(
     val glassBorder = if (isDark) {
         Brush.verticalGradient(
             listOf(
-                Color(0x664A90E2),
+                Color(0x5538BDF8),
                 Color(0x221E3A5F)
             )
         )
     } else {
         Brush.verticalGradient(
             listOf(
-                Color(0xFFFFFFFF),
-                Color(0xCCFFFFFF),
-                Color(0x50CBD5E1)
+                Color(0xFFD6E7FA),
+                Color(0xFFBFDBFE)
             )
         )
     }
@@ -1276,6 +1275,7 @@ fun CircularDaysGauge(
     days: Int,
     percentage: Float = 0.82f,
     size: Dp = 90.dp,
+    onSkyGradient: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isDark = isAppInDarkTheme()
@@ -1291,15 +1291,31 @@ fun CircularDaysGauge(
     val labelFontSize = if (isCompact) 8.5.sp else 10.sp
     val percentFontSize = if (isCompact) 8.5.sp else 10.sp
 
-    val arcColors = when {
-        days <= 0 -> listOf(SkylineError, Color(0xFFFF6B6B), SkylineError)
-        days <= 3 -> listOf(Color(0xFFF59E0B), Color(0xFFFB923C), Color(0xFFF59E0B))
-        else -> listOf(SkylineBlue, SkylineCyan, SkylineSuccess, SkylineCyan, SkylineBlue)
+    val arcColors = if (onSkyGradient) {
+        when {
+            days <= 0 -> listOf(Color(0xFFFCA5A5), Color(0xFFEF4444), Color(0xFFFCA5A5))
+            days <= 3 -> listOf(Color(0xFFFDE68A), Color(0xFFF59E0B), Color(0xFFFDE68A))
+            else -> listOf(Color.White, Color(0xFFBAE6FD), Color(0xFF6EE7B7), Color.White)
+        }
+    } else {
+        when {
+            days <= 0 -> listOf(SkylineError, Color(0xFFFF6B6B), SkylineError)
+            days <= 3 -> listOf(Color(0xFFF59E0B), Color(0xFFFB923C), Color(0xFFF59E0B))
+            else -> listOf(SkylineBlue, SkylineCyan, SkylineSuccess, SkylineCyan, SkylineBlue)
+        }
     }
-    val accentColor = when {
-        days <= 0 -> SkylineError
-        days <= 3 -> Color(0xFFF59E0B)
-        else -> SkylineSuccess
+    val accentColor = if (onSkyGradient) {
+        when {
+            days <= 0 -> Color(0xFFFECACA)
+            days <= 3 -> Color(0xFFFDE68A)
+            else -> Color(0xFFE0F2FE)
+        }
+    } else {
+        when {
+            days <= 0 -> SkylineError
+            days <= 3 -> Color(0xFFF59E0B)
+            else -> SkylineSuccess
+        }
     }
 
     Box(
@@ -1308,7 +1324,11 @@ fun CircularDaysGauge(
     ) {
         Canvas(modifier = Modifier.size(size)) {
             val strokePx = strokeWidthDp.toPx()
-            val trackColor = if (isDark) Color(0x331E3A5F) else Color(0x28007AFF)
+            val trackColor = when {
+                onSkyGradient -> Color.White.copy(alpha = 0.24f)
+                isDark -> Color(0x331E3A5F)
+                else -> Color(0x28007AFF)
+            }
 
             drawArc(
                 color = trackColor,
@@ -1334,14 +1354,24 @@ fun CircularDaysGauge(
                 text = if (days <= 0) "0" else "$days",
                 fontSize = numberFontSize,
                 fontWeight = FontWeight.ExtraBold,
-                color = if (days <= 0) SkylineError else if (isDark) Color.White else Color(0xFF0F172A),
+                color = when {
+                    onSkyGradient && days <= 0 -> Color(0xFFFECACA)
+                    onSkyGradient -> Color.White
+                    days <= 0 -> SkylineError
+                    isDark -> Color.White
+                    else -> Color(0xFF0F172A)
+                },
                 lineHeight = numberFontSize
             )
             Text(
                 text = stringResource(R.string.days_remaining),
                 fontSize = labelFontSize,
                 fontWeight = FontWeight.SemiBold,
-                color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B),
+                color = when {
+                    onSkyGradient -> Color.White.copy(alpha = 0.88f)
+                    isDark -> Color(0xFF94A3B8)
+                    else -> Color(0xFF64748B)
+                },
                 lineHeight = labelFontSize
             )
             val pctInt = (percentage * 100).toInt().coerceIn(0, 100)

@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/skyline_app_icon_1790262792295"
+        android:drawable="@drawable/skyline_users_icon_1795607135251"
         android:gravity="center" />
 </layer-list>

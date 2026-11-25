@@ -33,8 +33,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -81,6 +85,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.analytics.AnalyticsManager
+import com.example.notifications.FcmNotificationManager
 import com.example.ui.theme.SkylineBlue
 import com.example.ui.theme.SkylineCyan
 import com.example.ui.theme.SkylineSuccess
@@ -747,6 +752,204 @@ fun ScheduledNotificationsSettingsCard(
                     color = SkylineSuccess
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun FcmNotificationSettingsCard(
+    onShowMessage: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val isDark = isAppInDarkTheme()
+
+    LaunchedEffect(Unit) {
+        FcmNotificationManager.getPreferences(context)
+    }
+
+    val prefs by FcmNotificationManager.preferencesFlow.collectAsState()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("card_fcm_notification_settings"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF0D1B33) else Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(
+            1.dp,
+            if (isDark) SkylineCyan.copy(alpha = 0.25f) else Color(0xFFE2E8F0)
+        )
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(SkylineBlue, SkylineCyan)
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudDone,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "إشعارات Firebase السحابية",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "استقبال الأخبار والعروض وتنبيهات الصيانة فوراً",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = SkylineSuccess.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, SkylineSuccess.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = "مفعّل",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SkylineSuccess,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // General Broadcasts (always active)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("row_fcm_general_topic"),
+                shape = RoundedCornerShape(14.dp),
+                color = SkylineBlue.copy(alpha = if (isDark) 0.12f else 0.06f),
+                border = BorderStroke(1.dp, SkylineBlue.copy(alpha = 0.25f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(SkylineBlue.copy(alpha = 0.14f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Campaign,
+                                contentDescription = null,
+                                tint = SkylineBlue,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "الإشعارات العامة",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "تنبيهات وإعلانات Skyline Users الرئيسية",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = SkylineBlue.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = "نشط دائماً",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SkylineBlue,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            NotificationToggleRow(
+                icon = Icons.Default.LocalOffer,
+                iconTint = SkylineSuccess,
+                title = "العروض والباقات الجديدة",
+                subtitle = "استقبال إشعارات العروض الحصرية والتخفيضات",
+                checked = prefs.offersEnabled,
+                testTag = "switch_fcm_offers",
+                onToggle = { enabled ->
+                    HapticFeedbackHelper.performClick(context, haptic)
+                    FcmNotificationManager.setOffersEnabled(context, enabled)
+                    onShowMessage(
+                        if (enabled) "تم تفعيل إشعارات العروض والباقات"
+                        else "تم إيقاف إشعارات العروض"
+                    )
+                }
+            )
+
+            NotificationToggleRow(
+                icon = Icons.Default.Build,
+                iconTint = Color(0xFFF59E0B),
+                title = "تنبيهات الصيانة والتحديثات",
+                subtitle = "إشعارات أعمال الصيانة الدورية وحالة الشبكة",
+                checked = prefs.maintenanceEnabled,
+                testTag = "switch_fcm_maintenance",
+                onToggle = { enabled ->
+                    HapticFeedbackHelper.performClick(context, haptic)
+                    FcmNotificationManager.setMaintenanceEnabled(context, enabled)
+                    onShowMessage(
+                        if (enabled) "تم تفعيل إشعارات الصيانة والتحديثات"
+                        else "تم إيقاف إشعارات الصيانة"
+                    )
+                }
+            )
         }
     }
 }

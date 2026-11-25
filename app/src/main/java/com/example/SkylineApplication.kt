@@ -16,8 +16,9 @@ class SkylineApplication : Application() {
         } catch (_: Throwable) {}
         AnalyticsManager.init(this)
         
-        // Initialize Notification Channels & Inbox
+        // Initialize Notification Channels, Inbox, & Firebase Cloud Messaging Topics
         NotificationInboxManager.init(this)
+        com.example.notifications.FcmNotificationManager.initAndSyncTopics(this)
 
         // Initialize WorkManager Periodic Subscription Expiration Checker
         try {
@@ -27,5 +28,9 @@ class SkylineApplication : Application() {
 
         // Initialize In-App Update Manager & Remote Config
         UpdateManager.initialize(this)
+
+        // Initialize Remote Branding & Firestore Real-time Sync
+        com.example.admin.AppBrandingManager.init(this)
+        com.example.admin.RemoteSyncManager.start(this)
     }
 }

@@ -122,17 +122,15 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
   implementation(libs.firebase.analytics)
-  // Uncomment to use Firestore:
-  // implementation(libs.firebase.firestore)
+  // Firestore, Auth, and Google Sign-In via Credential Manager:
+  implementation(libs.firebase.firestore)
   implementation(libs.firebase.config)
-  // implementation(libs.firebase.messaging)
+  implementation(libs.firebase.messaging)
 
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
-  // implementation(libs.firebase.auth)
-  // implementation(libs.androidx.credentials)
-  // implementation(libs.androidx.credentials.play.services)
-  // implementation(libs.googleid)
+  implementation(libs.firebase.auth)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services)
+  implementation(libs.googleid)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)

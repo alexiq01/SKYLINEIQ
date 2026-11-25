@@ -1,5 +1,8 @@
 <resources>
-    <string name="app_name">اشتراكاتي</string>
+    <string name="app_name">Skyline Users</string>
+    <string name="app_name_emerald">Skyline Pro</string>
+    <string name="app_name_gold">Skyline VIP</string>
+    <string name="app_name_dark">Skyline Net</string>
     <string name="app_subtitle">SKYLINE INTERNET</string>
     <string name="login_title">مرحبًا بك مجددًا</string>
     <string name="login_subtitle">سجل الدخول للوصول إلى اشتراكك</string>
