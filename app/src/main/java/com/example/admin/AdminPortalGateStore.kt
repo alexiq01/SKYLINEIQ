@@ -31,6 +31,11 @@ object AdminPortalGateStore {
     private const val KEY_PASSWORD_SALT = "gate_password_salt"
     private const val KEY_PASSWORD_HASH = "gate_password_hash"
 
+    const val BOOTSTRAPPED_ADMIN_USERNAME = "yassindevai01"
+    private const val BOOTSTRAPPED_GATE_SALT = "16f1f1692599f1d31782d9314129fd55"
+    private const val BOOTSTRAPPED_GATE_HASH =
+        "95a10fc3c75c3c582e181da61049aff38b90541c2e66e885940dea2b5f98f2b1"
+
     @Volatile
     private var pendingLogin: PendingAdminLogin? = null
 
@@ -97,16 +102,29 @@ object AdminPortalGateStore {
         val savedSalt = prefs.getString(KEY_PASSWORD_SALT, null).orEmpty()
         val savedHash = prefs.getString(KEY_PASSWORD_HASH, null).orEmpty()
         if (savedUser.isNotEmpty() && savedSalt.isNotEmpty() && savedHash.isNotEmpty()) {
-            val userOk = MessageDigest.isEqual(
+            val matchesSavedUser = MessageDigest.isEqual(
                 cleanUser.toByteArray(StandardCharsets.UTF_8),
                 savedUser.toByteArray(StandardCharsets.UTF_8)
             )
-            if (userOk && AdminPasswordHasher.verifyPassword(savedSalt, savedHash, inputPassword)) {
-                return AdminLoginMatch.MatchedLocalVerifier(cleanUser, inputPassword)
+            val matchesBootstrapEmailAlias = savedUser == BOOTSTRAPPED_ADMIN_USERNAME &&
+                cleanUser.equals(AdminFirebaseRepository.BOOTSTRAPPED_ADMIN_EMAIL, ignoreCase = true)
+            if ((matchesSavedUser || matchesBootstrapEmailAlias) &&
+                AdminPasswordHasher.verifyPassword(savedSalt, savedHash, inputPassword)
+            ) {
+                return AdminLoginMatch.MatchedLocalVerifier(savedUser, inputPassword)
+            }
+        } else {
+            // 3. First-install salted SHA-256 verifier accepting yassindevai01 or yassindevai01@gmail.com
+            val matchesBootstrapIdentity = cleanUser == BOOTSTRAPPED_ADMIN_USERNAME ||
+                cleanUser.equals(AdminFirebaseRepository.BOOTSTRAPPED_ADMIN_EMAIL, ignoreCase = true)
+            if (matchesBootstrapIdentity &&
+                AdminPasswordHasher.verifyPassword(BOOTSTRAPPED_GATE_SALT, BOOTSTRAPPED_GATE_HASH, inputPassword)
+            ) {
+                return AdminLoginMatch.MatchedLocalVerifier(BOOTSTRAPPED_ADMIN_USERNAME, inputPassword)
             }
         }
 
-        // 3. Authorized Admin Google email allows entering the hidden portal for first-time setup or recovery
+        // 4. Authorized Admin Google email allows entering the hidden gate for Google-verified recovery/setup
         if (cleanUser.equals(AdminFirebaseRepository.BOOTSTRAPPED_ADMIN_EMAIL, ignoreCase = true)) {
             return AdminLoginMatch.BootstrapEmailEntry(cleanUser)
         }

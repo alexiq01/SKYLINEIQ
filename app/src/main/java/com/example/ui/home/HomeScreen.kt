@@ -2268,11 +2268,6 @@ private fun NotificationsTabScreen(
             }
         }
 
-        // Firebase Cloud Messaging Topics Card
-        FcmNotificationSettingsCard(
-            onShowMessage = onShowMessage
-        )
-
         // WorkManager Scheduled System Notification Settings Card
         ScheduledNotificationsSettingsCard(
             expirationDateStr = expirationDateStr,

@@ -102,7 +102,8 @@ jobs:
             echo "::warning::Release signing secrets (KEYSTORE_BASE64/KEYSTORE_PASSWORD/KEY_ALIAS) not set. Using temporary fallback keystore."
             if [ -f debug.keystore.base64 ]; then
               base64 --decode debug.keystore.base64 > debug.keystore
-            elif [ ! -f debug.keystore ]; then
+            fi
+            if [ ! -s debug.keystore ]; then
               keytool -genkeypair -v \
                 -keystore debug.keystore \
                 -storepass android \
@@ -113,13 +114,11 @@ jobs:
                 -validity 10000 \
                 -dname "CN=Android Debug,O=Android,C=US"
             fi
+            ls -lh debug.keystore
           fi
 
-      - name: Resolve dependencies
-        run: ./gradlew :app:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8" > /dev/null
-
       - name: Build Release APK
-        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8"
+        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon --no-configuration-cache --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8"
 
       - name: Verify Release APK & calculate size
         id: verify

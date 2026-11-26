@@ -440,7 +440,7 @@ fun AdminAuthGateContent(
                         OutlinedTextField(
                             value = username,
                             onValueChange = { username = it },
-                            label = { Text("يوزر نيم الأدمن") },
+                            label = { Text("يوزر نيم أو بريد الأدمن") },
                             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),

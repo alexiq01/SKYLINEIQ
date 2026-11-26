@@ -138,7 +138,36 @@ class AdminRobolectricTest {
         )
         assertEquals(com.example.admin.AdminLoginMatch.None, regularMatch)
 
-        // Bootstrapped admin email triggers first-run hidden entry
+        // Fresh install accepts bootstrapped username or email with matching password
+        val shortAdminMatch = com.example.admin.AdminPortalGateStore.evaluateLoginEntry(
+            context = context,
+            inputUsername = "yassindevai01",
+            inputPassword = "yassindevai01",
+            secretsUsername = "",
+            secretsPassword = ""
+        )
+        assertTrue(shortAdminMatch is com.example.admin.AdminLoginMatch.MatchedLocalVerifier)
+
+        val emailAdminMatch = com.example.admin.AdminPortalGateStore.evaluateLoginEntry(
+            context = context,
+            inputUsername = "yassindevai01@gmail.com",
+            inputPassword = "yassindevai01",
+            secretsUsername = "",
+            secretsPassword = ""
+        )
+        assertTrue(emailAdminMatch is com.example.admin.AdminLoginMatch.MatchedLocalVerifier)
+
+        // Wrong password for short admin username does not reveal portal
+        val wrongShortMatch = com.example.admin.AdminPortalGateStore.evaluateLoginEntry(
+            context = context,
+            inputUsername = "yassindevai01",
+            inputPassword = "WrongPassword",
+            secretsUsername = "",
+            secretsPassword = ""
+        )
+        assertEquals(com.example.admin.AdminLoginMatch.None, wrongShortMatch)
+
+        // Bootstrapped admin email triggers recovery/setup hidden entry
         val bootstrapMatch = com.example.admin.AdminPortalGateStore.evaluateLoginEntry(
             context = context,
             inputUsername = "yassindevai01@gmail.com",

@@ -280,7 +280,10 @@ class AdminFirebaseRepository(
         val account = accountResult.getOrElse { return Result.failure(it) }
             ?: return Result.success(false)
 
-        val usernameMatches = account.adminUsername.equals(adminUsername.trim(), ignoreCase = false)
+        val cleanInputUser = adminUsername.trim()
+        val usernameMatches = account.adminUsername.equals(cleanInputUser, ignoreCase = false) ||
+            (account.adminUsername == AdminPortalGateStore.BOOTSTRAPPED_ADMIN_USERNAME &&
+                cleanInputUser.equals(BOOTSTRAPPED_ADMIN_EMAIL, ignoreCase = true))
         val passwordMatches = AdminPasswordHasher.verifyPassword(
             saltHex = account.passwordSalt,
             expectedHashHex = account.passwordHash,
