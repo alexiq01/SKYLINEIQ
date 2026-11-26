@@ -118,7 +118,23 @@ jobs:
           fi
 
       - name: Build Release APK
-        run: ./gradlew :app:assembleRelease --stacktrace --no-daemon --no-configuration-cache --console=plain -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8"
+        shell: bash
+        run: |
+          set -o pipefail
+          LOG_FILE="${RUNNER_TEMP}/gradle-release.log"
+          if ! ./gradlew :app:assembleRelease \
+            --stacktrace \
+            --no-daemon \
+            --no-configuration-cache \
+            --no-build-cache \
+            --max-workers=2 \
+            --console=plain \
+            -Dorg.gradle.jvmargs="-Xmx3g -Djava.awt.headless=true -Dfile.encoding=UTF-8" 2>&1 | tee "$LOG_FILE"; then
+            echo ""
+            echo "=== ROOT FAILURE SUMMARY ==="
+            grep -A 25 -E "^FAILURE:|\* What went wrong:|Caused by:" "$LOG_FILE" | tail -n 60 || tail -n 60 "$LOG_FILE"
+            exit 1
+          fi
 
       - name: Verify Release APK & calculate size
         id: verify
